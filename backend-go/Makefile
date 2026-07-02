@@ -12,8 +12,11 @@ BIN := ./bin/$(APP)
 # 自动检测 go 命令：优先用 PATH 中的，找不到则用 Homebrew 路径
 GO := $(shell which go 2>/dev/null || echo /opt/homebrew/bin/go)
 
+# swag CLI 路径：优先 PATH，找不到用 ~/go/bin/swag
+SWAG := $(shell which swag 2>/dev/null || echo $(HOME)/go/bin/swag)
+
 # 声明伪目标（这些名字不对应实际文件，每次调用都会执行）
-.PHONY: all build run clean tidy vet fmt
+.PHONY: all build run clean tidy vet fmt swagger
 
 # 默认目标
 all: build
@@ -37,6 +40,10 @@ vet:
 # 格式化：自动格式化所有 .go 文件
 fmt:
 	$(GO) fmt ./...
+
+# 更新 Swagger 文档：扫描 handler 注释，重新生成 docs/
+swagger:
+	$(SWAG) init --dir . --generalInfo main.go --output docs
 
 # 清理：删除编译产物
 clean:
