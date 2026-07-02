@@ -52,16 +52,16 @@ func SendSMS(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var req smsSendRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "请求格式错误"})
+		Fail(c, http.StatusBadRequest, 400, "请求格式错误")
 		return
 	}
 	var modem models.Modem
 	if database.DB.First(&modem, req.ModemID).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Modem not found"})
+		Fail(c, http.StatusNotFound, 404, "Modem not found")
 		return
 	}
 	if !requireUseGrant(me, modem.ID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无该SIM卡的使用权限，请先申请"})
+		Fail(c, http.StatusForbidden, 403, "无该SIM卡的使用权限，请先申请")
 		return
 	}
 
@@ -76,7 +76,7 @@ func SendSMS(c *gin.Context) {
 	} else {
 		m := reModem.FindStringSubmatch(obj)
 		if m == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Modem not available"})
+			Fail(c, http.StatusServiceUnavailable, 503, "Modem not available")
 			return
 		}
 		success, message = services.SendSMS(m[1], req.PhoneNumber, req.Content)
@@ -107,10 +107,10 @@ func SendSMS(c *gin.Context) {
 		} else {
 			services.Push("sms_failed", "短信发送失败", "["+label+"] "+body, "user", &me.ID)
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"detail": "SMS send failed: " + message})
+		Fail(c, http.StatusBadGateway, 502, "SMS send failed: " + message)
 		return
 	}
-	c.JSON(http.StatusOK, sms)
+	OK(c, sms)
 }
 
 // modemDisplayLabel 返回设备展示名称，优先级：别名 > 型号 > 设备#ID。
@@ -141,7 +141,7 @@ func ListMessages(c *gin.Context) {
 	ids, unrestricted := userVisibleModemIDs(me)
 	if !unrestricted {
 		if len(ids) == 0 {
-			c.JSON(http.StatusOK, []models.SmsMessage{})
+			OK(c, []models.SmsMessage{})
 			return
 		}
 		q = q.Where("modem_id IN ?", ids)
@@ -156,7 +156,7 @@ func ListMessages(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	var msgs []models.SmsMessage
 	q.Order("created_at desc").Offset(skip).Limit(limit).Find(&msgs)
-	c.JSON(http.StatusOK, msgs)
+	OK(c, msgs)
 }
 
 // deleteFromModem 将收件短信从物理设备上删除（避免设备存储满），仅处理收件方向。
@@ -183,17 +183,17 @@ func DeleteMessage(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var msg models.SmsMessage
 	if database.DB.First(&msg, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "记录不存在"})
+		Fail(c, http.StatusNotFound, 404, "记录不存在")
 		return
 	}
 	ids, unrestricted := userVisibleModemIDs(me)
 	if !unrestricted && !security.ContainsUint(ids, msg.ModemID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权限"})
+		Fail(c, http.StatusForbidden, 403, "无权限")
 		return
 	}
 	deleteFromModem(&msg)
 	database.DB.Delete(&msg)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 type batchDeleteBody struct {
@@ -214,7 +214,7 @@ func BatchDeleteMessages(c *gin.Context) {
 	var body batchDeleteBody
 	c.ShouldBindJSON(&body)
 	if len(body.IDs) == 0 {
-		c.JSON(http.StatusOK, gin.H{"deleted": 0})
+		OK(c, gin.H{"deleted": 0})
 		return
 	}
 	q := database.DB.Where("id IN ?", body.IDs)
@@ -228,7 +228,7 @@ func BatchDeleteMessages(c *gin.Context) {
 		deleteFromModem(&msgs[i])
 		database.DB.Delete(&msgs[i])
 	}
-	c.JSON(http.StatusOK, gin.H{"deleted": len(msgs)})
+	OK(c, gin.H{"deleted": len(msgs)})
 }
 
 // Templates
@@ -243,7 +243,7 @@ func BatchDeleteMessages(c *gin.Context) {
 func ListTemplates(c *gin.Context) {
 	var tpls []models.SmsTemplate
 	database.DB.Find(&tpls)
-	c.JSON(http.StatusOK, tpls)
+	OK(c, tpls)
 }
 
 // CreateTemplate godoc
@@ -258,11 +258,11 @@ func ListTemplates(c *gin.Context) {
 func CreateTemplate(c *gin.Context) {
 	var tpl models.SmsTemplate
 	if err := c.ShouldBindJSON(&tpl); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "请求格式错误"})
+		Fail(c, http.StatusBadRequest, 400, "请求格式错误")
 		return
 	}
 	database.DB.Create(&tpl)
-	c.JSON(http.StatusOK, tpl)
+	OK(c, tpl)
 }
 
 // DeleteTemplate godoc
@@ -277,11 +277,11 @@ func DeleteTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var tpl models.SmsTemplate
 	if database.DB.First(&tpl, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Template not found"})
+		Fail(c, http.StatusNotFound, 404, "Template not found")
 		return
 	}
 	database.DB.Delete(&tpl)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // Scheduled tasks
@@ -322,7 +322,7 @@ func ListTasks(c *gin.Context) {
 	for i := range tasks {
 		out = append(out, taskToOut(&tasks[i]))
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 type taskCreate struct {
@@ -347,11 +347,11 @@ func CreateTask(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var data taskCreate
 	if err := c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "请求格式错误"})
+		Fail(c, http.StatusBadRequest, 400, "请求格式错误")
 		return
 	}
 	if !requireUseGrant(me, data.ModemID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无该SIM卡的使用权限，请先申请"})
+		Fail(c, http.StatusForbidden, 403, "无该SIM卡的使用权限，请先申请")
 		return
 	}
 	var cron *string
@@ -362,7 +362,7 @@ func CreateTask(c *gin.Context) {
 		}
 	}
 	if cron == nil && data.SendOnceAt == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "Provide cron_expression or send_once_at"})
+		Fail(c, http.StatusBadRequest, 400, "Provide cron_expression or send_once_at")
 		return
 	}
 	task := models.SmsScheduledTask{
@@ -377,7 +377,7 @@ func CreateTask(c *gin.Context) {
 	}
 	database.DB.Create(&task)
 	services.ScheduleTask(task)
-	c.JSON(http.StatusOK, task)
+	OK(c, task)
 }
 
 type taskUpdate struct {
@@ -404,11 +404,11 @@ func UpdateTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task models.SmsScheduledTask
 	if database.DB.First(&task, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Task not found"})
+		Fail(c, http.StatusNotFound, 404, "Task not found")
 		return
 	}
 	if !me.IsAdmin() && (task.CreatedByID == nil || *task.CreatedByID != me.ID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权修改此任务"})
+		Fail(c, http.StatusForbidden, 403, "无权修改此任务")
 		return
 	}
 	var data taskUpdate
@@ -436,7 +436,7 @@ func UpdateTask(c *gin.Context) {
 	if task.Status == models.TaskActive {
 		services.ScheduleTask(task)
 	}
-	c.JSON(http.StatusOK, task)
+	OK(c, task)
 }
 
 // DeleteTask godoc
@@ -452,16 +452,16 @@ func DeleteTask(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task models.SmsScheduledTask
 	if database.DB.First(&task, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Task not found"})
+		Fail(c, http.StatusNotFound, 404, "Task not found")
 		return
 	}
 	if !me.IsAdmin() && (task.CreatedByID == nil || *task.CreatedByID != me.ID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权删除此任务"})
+		Fail(c, http.StatusForbidden, 403, "无权删除此任务")
 		return
 	}
 	services.RemoveTask(task.ID)
 	database.DB.Delete(&task)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // RunTaskNow godoc
@@ -476,11 +476,11 @@ func RunTaskNow(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task models.SmsScheduledTask
 	if database.DB.First(&task, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Task not found"})
+		Fail(c, http.StatusNotFound, 404, "Task not found")
 		return
 	}
 	services.ExecuteTask(uint(id))
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // AdminListTasks godoc
@@ -509,7 +509,7 @@ func AdminListTasks(c *gin.Context) {
 	for i := range tasks {
 		out = append(out, taskToOut(&tasks[i]))
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 // AdminTaskStats godoc
@@ -540,7 +540,7 @@ func AdminTaskStats(c *gin.Context) {
 			stats["failed"] = stats["failed"].(int) + 1
 		}
 	}
-	c.JSON(http.StatusOK, stats)
+	OK(c, stats)
 }
 
 // AdminTaskHistory godoc
@@ -557,15 +557,15 @@ func AdminTaskHistory(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task models.SmsScheduledTask
 	if database.DB.First(&task, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "任务不存在"})
+		Fail(c, http.StatusNotFound, 404, "任务不存在")
 		return
 	}
 	if !me.IsAdmin() && (task.CreatedByID == nil || *task.CreatedByID != me.ID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权查看该任务"})
+		Fail(c, http.StatusForbidden, 403, "无权查看该任务")
 		return
 	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	var msgs []models.SmsMessage
 	database.DB.Where("scheduled_task_id = ?", id).Order("created_at desc").Limit(limit).Find(&msgs)
-	c.JSON(http.StatusOK, msgs)
+	OK(c, msgs)
 }

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net/http"
 	"time"
 
 	"simnexus-go/database"
@@ -82,7 +81,7 @@ func DashboardStats(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	OK(c, gin.H{
 		"sms_trend": trendList,
 		"month_sms": monthStats,
 		"tasks":     taskStats,

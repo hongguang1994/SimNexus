@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"math/rand"
-	"net/http"
 	"strings"
 	"time"
 
@@ -39,7 +38,7 @@ func GetCaptcha(c *gin.Context) {
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, _ := tok.SignedString([]byte(config.SecretKey))
-	c.JSON(http.StatusOK, gin.H{"token": signed, "svg": captchaSVG(string(code))})
+	OK(c, gin.H{"token": signed, "svg": captchaSVG(string(code))})
 }
 
 // verifyCaptcha 验证 JWT 签名的验证码 token 和用户输入的答案是否匹配（大小写不敏感）。

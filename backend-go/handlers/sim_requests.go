@@ -155,20 +155,20 @@ func CreateSimRequest(c *gin.Context) {
 		body.RequestedLevel = models.LevelUse
 	}
 	if body.RequestedLevel != models.LevelView && body.RequestedLevel != models.LevelUse {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "requested_level 必须是 view 或 use"})
+		Fail(c, http.StatusBadRequest, 400, "requested_level 必须是 view 或 use")
 		return
 	}
 	now := time.Now()
 	var eg models.SimGrant
 	if database.DB.Where("user_id = ? AND modem_id = ?", me.ID, body.ModemID).First(&eg).Error == nil {
 		if eg.ExpiresAt == nil || eg.ExpiresAt.After(now) {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "已有有效授权，无需重复申请"})
+			Fail(c, http.StatusBadRequest, 400, "已有有效授权，无需重复申请")
 			return
 		}
 	}
 	var pending models.SimAccessRequest
 	if database.DB.Where("user_id = ? AND modem_id = ? AND status = ?", me.ID, body.ModemID, models.ReqPending).First(&pending).Error == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "已有待审批的申请，请勿重复提交"})
+		Fail(c, http.StatusBadRequest, 400, "已有待审批的申请，请勿重复提交")
 		return
 	}
 	var reason *string
@@ -182,7 +182,7 @@ func CreateSimRequest(c *gin.Context) {
 	database.DB.Create(&req)
 	services.Push("sim_request", "新的SIM卡申请",
 		"用户 "+me.Username+" 申请访问 SIM "+strconv.Itoa(int(body.ModemID)), "admin", nil)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // MyRequests godoc
@@ -206,7 +206,7 @@ func MyRequests(c *gin.Context) {
 	for i := range reqs {
 		out = append(out, fmtRequest(&reqs[i], gm))
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 // MyGrants godoc
@@ -236,7 +236,7 @@ func MyGrants(c *gin.Context) {
 			"is_expired": false, "created_at": g.CreatedAt,
 		})
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 // ListRequests godoc
@@ -278,7 +278,7 @@ func ListRequests(c *gin.Context) {
 	for i := range reqs {
 		out = append(out, fmtRequest(&reqs[i], gm))
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 type approveBody struct {
@@ -306,17 +306,17 @@ func ApproveRequest(c *gin.Context) {
 		body.GrantedLevel = models.LevelUse
 	}
 	if body.GrantedLevel != models.LevelView && body.GrantedLevel != models.LevelUse {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "granted_level 必须是 view 或 use"})
+		Fail(c, http.StatusBadRequest, 400, "granted_level 必须是 view 或 use")
 		return
 	}
 	var req models.SimAccessRequest
 	if database.DB.First(&req, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "申请不存在"})
+		Fail(c, http.StatusNotFound, 404, "申请不存在")
 		return
 	}
 	ids, unrestricted := approverModemScope(approver)
 	if !inScope(ids, unrestricted, req.ModemID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权审批该设备的申请"})
+		Fail(c, http.StatusForbidden, 403, "无权审批该设备的申请")
 		return
 	}
 	req.Status = models.ReqApproved
@@ -325,7 +325,7 @@ func ApproveRequest(c *gin.Context) {
 	database.DB.Save(&req)
 	upsertGrant(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt, approver.ID, &req.ID)
 	notifyApproved(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 type rejectBody struct {
@@ -349,12 +349,12 @@ func RejectRequest(c *gin.Context) {
 	c.ShouldBindJSON(&body)
 	var req models.SimAccessRequest
 	if database.DB.First(&req, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "申请不存在"})
+		Fail(c, http.StatusNotFound, 404, "申请不存在")
 		return
 	}
 	ids, unrestricted := approverModemScope(approver)
 	if !inScope(ids, unrestricted, req.ModemID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权审批该设备的申请"})
+		Fail(c, http.StatusForbidden, 403, "无权审批该设备的申请")
 		return
 	}
 	req.Status = models.ReqRejected
@@ -366,7 +366,7 @@ func RejectRequest(c *gin.Context) {
 		body2 += "，原因：" + body.AdminNote
 	}
 	services.Push("sim_rejected", "SIM卡申请已拒绝", body2, "user", &req.UserID)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 type batchApproveBody struct {
@@ -393,7 +393,7 @@ func BatchApprove(c *gin.Context) {
 		body.GrantedLevel = models.LevelUse
 	}
 	if body.GrantedLevel != models.LevelView && body.GrantedLevel != models.LevelUse {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "granted_level 必须是 view 或 use"})
+		Fail(c, http.StatusBadRequest, 400, "granted_level 必须是 view 或 use")
 		return
 	}
 	ids, unrestricted := approverModemScope(approver)
@@ -413,7 +413,7 @@ func BatchApprove(c *gin.Context) {
 		notifyApproved(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt)
 		count++
 	}
-	c.JSON(http.StatusOK, gin.H{"approved": count})
+	OK(c, gin.H{"approved": count})
 }
 
 type directGrantBody struct {
@@ -441,17 +441,17 @@ func DirectGrant(c *gin.Context) {
 		body.GrantedLevel = models.LevelUse
 	}
 	if body.GrantedLevel != models.LevelView && body.GrantedLevel != models.LevelUse {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "granted_level 必须是 view 或 use"})
+		Fail(c, http.StatusBadRequest, 400, "granted_level 必须是 view 或 use")
 		return
 	}
 	ids, unrestricted := approverModemScope(approver)
 	if !inScope(ids, unrestricted, body.ModemID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权授权该设备"})
+		Fail(c, http.StatusForbidden, 403, "无权授权该设备")
 		return
 	}
 	var modem models.Modem
 	if database.DB.First(&modem, body.ModemID).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "设备不存在"})
+		Fail(c, http.StatusNotFound, 404, "设备不存在")
 		return
 	}
 	upsertGrant(body.UserID, body.ModemID, body.GrantedLevel, body.ExpiresAt, approver.ID, nil)
@@ -461,7 +461,7 @@ func DirectGrant(c *gin.Context) {
 	}
 	services.Push("sim_approved", "SIM卡权限已授予",
 		"管理员已授予你 "+modemName(body.ModemID)+" 的"+label, "user", &body.UserID)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // RevokeGrant godoc
@@ -477,12 +477,12 @@ func RevokeGrant(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var grant models.SimGrant
 	if database.DB.First(&grant, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "授权记录不存在"})
+		Fail(c, http.StatusNotFound, 404, "授权记录不存在")
 		return
 	}
 	ids, unrestricted := approverModemScope(approver)
 	if !inScope(ids, unrestricted, grant.ModemID) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权撤销该设备的授权"})
+		Fail(c, http.StatusForbidden, 403, "无权撤销该设备的授权")
 		return
 	}
 	uid := grant.UserID
@@ -490,7 +490,7 @@ func RevokeGrant(c *gin.Context) {
 	database.DB.Delete(&grant)
 	services.Push("sim_revoked", "SIM卡权限已撤销",
 		"你对 SIM "+strconv.Itoa(int(mid))+" 的访问权限已被撤销", "user", &uid)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // setNote 将审批备注写入申请记录，空字符串时置 nil。

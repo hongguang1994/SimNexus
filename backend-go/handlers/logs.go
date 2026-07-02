@@ -21,7 +21,7 @@ import (
 func LogsSSE(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil || !user.IsAdmin() {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "需要管理员权限"})
+		Fail(c, http.StatusForbidden, 403, "需要管理员权限")
 		return
 	}
 

@@ -55,11 +55,11 @@ func supportMsgOut(m *models.SupportMessage) gin.H {
 func SupportUpload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "缺少文件"})
+		Fail(c, http.StatusBadRequest, 400, "缺少文件")
 		return
 	}
 	if file.Size > maxSupportFileSize {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "文件大小超过 20MB 限制"})
+		Fail(c, http.StatusBadRequest, 400, "文件大小超过 20MB 限制")
 		return
 	}
 	os.MkdirAll(config.C.UploadDir, 0o755)
@@ -69,7 +69,7 @@ func SupportUpload(c *gin.Context) {
 	name := hex.EncodeToString(buf) + ext
 	dst := filepath.Join(config.C.UploadDir, name)
 	if err := c.SaveUploadedFile(file, dst); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "保存失败"})
+		Fail(c, http.StatusInternalServerError, 500, "保存失败")
 		return
 	}
 	ct := file.Header.Get("Content-Type")
@@ -77,7 +77,7 @@ func SupportUpload(c *gin.Context) {
 	if supportImageTypes[ct] {
 		attType = "image"
 	}
-	c.JSON(http.StatusOK, gin.H{"url": "/api/support/files/" + name, "name": file.Filename, "type": attType})
+	OK(c, gin.H{"url": "/api/support/files/" + name, "name": file.Filename, "type": attType})
 }
 
 // SupportServeFile godoc
@@ -89,12 +89,12 @@ func SupportUpload(c *gin.Context) {
 func SupportServeFile(c *gin.Context) {
 	filename := c.Param("filename")
 	if strings.Contains(filename, "/") || strings.Contains(filename, "..") {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "非法文件名"})
+		Fail(c, http.StatusBadRequest, 400, "非法文件名")
 		return
 	}
 	path := filepath.Join(config.C.UploadDir, filename)
 	if _, err := os.Stat(path); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "文件不存在"})
+		Fail(c, http.StatusNotFound, 404, "文件不存在")
 		return
 	}
 	c.File(path)
@@ -130,19 +130,19 @@ func SupportSendMessage(c *gin.Context) {
 	var body messageIn
 	c.ShouldBindJSON(&body)
 	if strings.TrimSpace(body.Content) == "" && body.AttachmentURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "消息或附件不能同时为空"})
+		Fail(c, http.StatusBadRequest, 400, "消息或附件不能同时为空")
 		return
 	}
 	staff := security.IsSupportStaff(me)
 	var msg models.SupportMessage
 	if staff {
 		if body.UserID == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "客服必须指定目标用户"})
+			Fail(c, http.StatusBadRequest, 400, "客服必须指定目标用户")
 			return
 		}
 		var target models.User
 		if database.DB.First(&target, *body.UserID).Error != nil {
-			c.JSON(http.StatusNotFound, gin.H{"detail": "用户不存在"})
+			Fail(c, http.StatusNotFound, 404, "用户不存在")
 			return
 		}
 		msg = models.SupportMessage{
@@ -177,7 +177,7 @@ func SupportSendMessage(c *gin.Context) {
 	} else {
 		services.Push("support_msg", "用户咨询："+me.Username, preview, "support", nil)
 	}
-	c.JSON(http.StatusOK, supportMsgOut(&msg))
+	OK(c, supportMsgOut(&msg))
 }
 
 // SupportGetMessages godoc
@@ -195,7 +195,7 @@ func SupportGetMessages(c *gin.Context) {
 	if security.IsSupportStaff(me) {
 		uid := c.Query("user_id")
 		if uid == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "需要指定 user_id"})
+			Fail(c, http.StatusBadRequest, 400, "需要指定 user_id")
 			return
 		}
 		q = q.Where("user_id = ?", uid)
@@ -211,7 +211,7 @@ func SupportGetMessages(c *gin.Context) {
 	for i := range msgs {
 		out = append(out, supportMsgOut(&msgs[i]))
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 // SupportMarkRead godoc
@@ -227,7 +227,7 @@ func SupportMarkRead(c *gin.Context) {
 	if security.IsSupportStaff(me) {
 		uid := c.Query("user_id")
 		if uid == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "需要 user_id"})
+			Fail(c, http.StatusBadRequest, 400, "需要 user_id")
 			return
 		}
 		database.DB.Model(&models.SupportMessage{}).
@@ -238,7 +238,7 @@ func SupportMarkRead(c *gin.Context) {
 			Where("user_id = ? AND is_from_user = ? AND is_read = ?", me.ID, false, false).
 			Update("is_read", true)
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // SupportUnread godoc
@@ -258,7 +258,7 @@ func SupportUnread(c *gin.Context) {
 		database.DB.Model(&models.SupportMessage{}).
 			Where("user_id = ? AND is_from_user = ? AND is_read = ?", me.ID, false, false).Count(&count)
 	}
-	c.JSON(http.StatusOK, gin.H{"count": count})
+	OK(c, gin.H{"count": count})
 }
 
 // SupportConversations godoc
@@ -271,7 +271,7 @@ func SupportUnread(c *gin.Context) {
 func SupportConversations(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	if !security.IsSupportStaff(me) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无客服权限"})
+		Fail(c, http.StatusForbidden, 403, "无客服权限")
 		return
 	}
 	var userIDs []uint
@@ -317,5 +317,5 @@ func SupportConversations(c *gin.Context) {
 			}
 		}
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }

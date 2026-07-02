@@ -28,7 +28,7 @@ func TelegramListMessages(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	var msgs []models.TelegramMessage
 	database.DB.Order("created_at desc").Offset(skip).Limit(limit).Find(&msgs)
-	c.JSON(http.StatusOK, msgs)
+	OK(c, msgs)
 }
 
 type telegramSend struct {
@@ -49,11 +49,11 @@ func TelegramSend(c *gin.Context) {
 	var body telegramSend
 	c.ShouldBindJSON(&body)
 	if body.Text == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "消息不能为空"})
+		Fail(c, http.StatusBadRequest, 400, "消息不能为空")
 		return
 	}
 	if !services.TelegramSendMessage(body.Text, body.ChatID, false) {
-		c.JSON(http.StatusBadGateway, gin.H{"detail": "发送失败，请检查 Bot Token 和 Chat ID"})
+		Fail(c, http.StatusBadGateway, 502, "发送失败，请检查 Bot Token 和 Chat ID")
 		return
 	}
 	chatID := body.ChatID
@@ -64,7 +64,7 @@ func TelegramSend(c *gin.Context) {
 	database.DB.Create(&models.TelegramMessage{
 		ChatID: chatID, Username: &un, Direction: "out", Text: body.Text,
 	})
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // TelegramSendFile godoc
@@ -80,13 +80,13 @@ func TelegramSend(c *gin.Context) {
 func TelegramSendFile(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "缺少文件"})
+		Fail(c, http.StatusBadRequest, 400, "缺少文件")
 		return
 	}
 	caption := c.PostForm("caption")
 	f, err := file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "读取失败"})
+		Fail(c, http.StatusInternalServerError, 500, "读取失败")
 		return
 	}
 	defer f.Close()
@@ -97,7 +97,7 @@ func TelegramSendFile(c *gin.Context) {
 	}
 	ok, fileType, fileID, errMsg := services.TelegramSendFile(file.Filename, content, ct, caption)
 	if !ok {
-		c.JSON(http.StatusBadGateway, gin.H{"detail": errMsg})
+		Fail(c, http.StatusBadGateway, 502, errMsg)
 		return
 	}
 	label := caption
@@ -111,7 +111,7 @@ func TelegramSendFile(c *gin.Context) {
 		ChatID: config.C.TelegramChatID, Username: &un, Direction: "out",
 		Text: label, FileType: &ftCopy, FileID: &fidCopy,
 	})
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // TelegramClearMessages godoc
@@ -123,7 +123,7 @@ func TelegramSendFile(c *gin.Context) {
 // @Router /api/v1/telegram/messages [delete]
 func TelegramClearMessages(c *gin.Context) {
 	database.DB.Where("1 = 1").Delete(&models.TelegramMessage{})
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // TelegramProxyFile godoc
@@ -136,21 +136,21 @@ func TelegramClearMessages(c *gin.Context) {
 func TelegramProxyFile(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"detail": "Not authenticated"})
+		Fail(c, http.StatusUnauthorized, 401, "Not authenticated")
 		return
 	}
 	username, err := security.ParseToken(token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"detail": "Invalid token"})
+		Fail(c, http.StatusUnauthorized, 401, "Invalid token")
 		return
 	}
 	user, err := security.LoadUserByUsername(database.DB, username)
 	if err != nil || !user.IsAdmin() {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "Forbidden"})
+		Fail(c, http.StatusForbidden, 403, "Forbidden")
 		return
 	}
 	if config.C.TelegramBotToken == "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Bot not configured"})
+		Fail(c, http.StatusServiceUnavailable, 503, "Bot not configured")
 		return
 	}
 	fileID := c.Param("file_id")
@@ -159,7 +159,7 @@ func TelegramProxyFile(c *gin.Context) {
 	}
 	content, ct, filename, err := services.TelegramProxyFile(fileID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "File not found"})
+		Fail(c, http.StatusNotFound, 404, "File not found")
 		return
 	}
 	c.Header("Content-Disposition", `inline; filename="`+filename+`"`)
@@ -174,7 +174,7 @@ func TelegramProxyFile(c *gin.Context) {
 // @Security BearerAuth
 // @Router /api/v1/telegram/config [get]
 func TelegramConfig(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	OK(c, gin.H{
 		"bot_token_set": config.C.TelegramBotToken != "",
 		"chat_id":       config.C.TelegramChatID,
 		"polling":       config.C.TelegramBotToken != "",

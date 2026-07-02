@@ -50,13 +50,13 @@ func ListAvailableModems(c *gin.Context) {
 	if !u.IsAdmin() {
 		p := security.Perm(u)
 		if p == nil || !p.CanViewSim {
-			c.JSON(http.StatusForbidden, gin.H{"detail": "无SIM卡查看权限"})
+			Fail(c, http.StatusForbidden, 403, "无SIM卡查看权限")
 			return
 		}
 	}
 	var modems []models.Modem
 	database.DB.Where("is_active = ?", true).Order("id").Find(&modems)
-	c.JSON(http.StatusOK, modems)
+	OK(c, modems)
 }
 
 // ListModems godoc
@@ -71,21 +71,21 @@ func ListModems(c *gin.Context) {
 	if u.IsAdmin() {
 		var modems []models.Modem
 		database.DB.Where("is_active = ?", true).Order("id").Find(&modems)
-		c.JSON(http.StatusOK, modems)
+		OK(c, modems)
 		return
 	}
 	ids, _, ok := visibleModemIDs(u)
 	if !ok {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无SIM卡查看权限"})
+		Fail(c, http.StatusForbidden, 403, "无SIM卡查看权限")
 		return
 	}
 	if len(ids) == 0 {
-		c.JSON(http.StatusOK, []models.Modem{})
+		OK(c, []models.Modem{})
 		return
 	}
 	var modems []models.Modem
 	database.DB.Where("id IN ? AND is_active = ?", ids, true).Order("id").Find(&modems)
-	c.JSON(http.StatusOK, modems)
+	OK(c, modems)
 }
 
 // canAccessModem 检查用户是否有权访问指定设备（任意权限级别）。
@@ -112,15 +112,15 @@ func GetModem(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	u := middleware.CurrentUser(c)
 	if !u.IsAdmin() && !canAccessModem(u, uint(id)) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权访问该设备"})
+		Fail(c, http.StatusForbidden, 403, "无权访问该设备")
 		return
 	}
 	var modem models.Modem
 	if database.DB.First(&modem, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Modem not found"})
+		Fail(c, http.StatusNotFound, 404, "Modem not found")
 		return
 	}
-	c.JSON(http.StatusOK, modem)
+	OK(c, modem)
 }
 
 // modemUpdate 调制解调器可编辑字段（目前仅支持修改别名）。
@@ -142,7 +142,7 @@ func UpdateModem(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var modem models.Modem
 	if database.DB.First(&modem, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Modem not found"})
+		Fail(c, http.StatusNotFound, 404, "Modem not found")
 		return
 	}
 	var data modemUpdate
@@ -151,7 +151,7 @@ func UpdateModem(c *gin.Context) {
 		modem.Alias = *data.Alias
 	}
 	database.DB.Save(&modem)
-	c.JSON(http.StatusOK, modem)
+	OK(c, modem)
 }
 
 // GetModemDetail godoc
@@ -166,12 +166,12 @@ func GetModemDetail(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	u := middleware.CurrentUser(c)
 	if !u.IsAdmin() && !canAccessModem(u, uint(id)) {
-		c.JSON(http.StatusForbidden, gin.H{"detail": "无权访问该设备"})
+		Fail(c, http.StatusForbidden, 403, "无权访问该设备")
 		return
 	}
 	var modem models.Modem
 	if database.DB.First(&modem, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Modem not found"})
+		Fail(c, http.StatusNotFound, 404, "Modem not found")
 		return
 	}
 	var sent, received, today int64
@@ -185,7 +185,7 @@ func GetModemDetail(c *gin.Context) {
 	out["sms_sent"] = sent
 	out["sms_received"] = received
 	out["sms_today"] = today
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 // RefreshModem godoc
@@ -200,17 +200,17 @@ func RefreshModem(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var modem models.Modem
 	if database.DB.First(&modem, id).Error != nil || modem.MmObjectPath == "" {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "Modem not found"})
+		Fail(c, http.StatusNotFound, 404, "Modem not found")
 		return
 	}
 	info := services.GetModemInfo(modem.MmObjectPath)
 	if info == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Could not reach modem"})
+		Fail(c, http.StatusServiceUnavailable, 503, "Could not reach modem")
 		return
 	}
 	modem.SignalQuality = info.SignalQuality
 	modem.Operator = info.Operator
 	modem.Status = info.Status
 	database.DB.Save(&modem)
-	c.JSON(http.StatusOK, modem)
+	OK(c, modem)
 }

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"net/http"
 	"strconv"
 
 	"simnexus-go/database"
@@ -44,7 +43,7 @@ func ListNotifications(c *gin.Context) {
 	var ns []models.Notification
 	visibleNotificationFilter(me, database.DB.Model(&models.Notification{})).
 		Order("id desc").Limit(limit).Find(&ns)
-	c.JSON(http.StatusOK, ns)
+	OK(c, ns)
 }
 
 // UnreadCount godoc
@@ -59,7 +58,7 @@ func UnreadCount(c *gin.Context) {
 	var count int64
 	visibleNotificationFilter(me, database.DB.Model(&models.Notification{})).
 		Where("is_read = ?", false).Count(&count)
-	c.JSON(http.StatusOK, gin.H{"count": count})
+	OK(c, gin.H{"count": count})
 }
 
 // MarkAllRead godoc
@@ -73,7 +72,7 @@ func MarkAllRead(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	visibleNotificationFilter(me, database.DB.Model(&models.Notification{})).
 		Where("is_read = ?", false).Update("is_read", true)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 // MarkOneRead godoc
@@ -93,5 +92,5 @@ func MarkOneRead(c *gin.Context) {
 		n.IsRead = true
 		database.DB.Save(&n)
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }

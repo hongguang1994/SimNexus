@@ -38,7 +38,7 @@ func ListRoles(c *gin.Context) {
 	for _, r := range roles {
 		out = append(out, models.RoleOut(r))
 	}
-	c.JSON(http.StatusOK, out)
+	OK(c, out)
 }
 
 // applyModemScope 替换角色的设备范围关联；ids=nil 或空时清除所有关联。
@@ -71,7 +71,7 @@ func CreateRole(c *gin.Context) {
 
 	var existing models.Role
 	if database.DB.Where("name = ?", body.Name).First(&existing).Error == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "角色名称已存在"})
+		Fail(c, http.StatusBadRequest, 400, "角色名称已存在")
 		return
 	}
 	role := models.Role{
@@ -85,7 +85,7 @@ func CreateRole(c *gin.Context) {
 	}
 	database.DB.Create(&role)
 	applyModemScope(&role, body.AllowedModemIDs)
-	c.JSON(http.StatusOK, models.RoleOut(role))
+	OK(c, models.RoleOut(role))
 }
 
 // UpdateRole godoc
@@ -102,7 +102,7 @@ func UpdateRole(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var role models.Role
 	if database.DB.Preload("ModemScope").First(&role, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "角色不存在"})
+		Fail(c, http.StatusNotFound, 404, "角色不存在")
 		return
 	}
 	var raw map[string]interface{}
@@ -135,7 +135,7 @@ func UpdateRole(c *gin.Context) {
 	if _, ok := raw["allowed_modem_ids"]; ok {
 		applyModemScope(&role, body.AllowedModemIDs)
 	}
-	c.JSON(http.StatusOK, models.RoleOut(role))
+	OK(c, models.RoleOut(role))
 }
 
 // DeleteRole godoc
@@ -150,15 +150,15 @@ func DeleteRole(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var role models.Role
 	if database.DB.First(&role, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "角色不存在"})
+		Fail(c, http.StatusNotFound, 404, "角色不存在")
 		return
 	}
 	if role.IsSystem {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "系统预置角色不可删除"})
+		Fail(c, http.StatusBadRequest, 400, "系统预置角色不可删除")
 		return
 	}
 	database.DB.Delete(&role)
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	OK(c, gin.H{"ok": true})
 }
 
 type setRolesBody struct {
@@ -179,7 +179,7 @@ func SetUserRoles(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var user models.User
 	if database.DB.First(&user, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"detail": "用户不存在"})
+		Fail(c, http.StatusNotFound, 404, "用户不存在")
 		return
 	}
 	var body setRolesBody
@@ -193,5 +193,5 @@ func SetUserRoles(c *gin.Context) {
 	for _, r := range roles {
 		ids = append(ids, r.ID)
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "user_id": id, "role_ids": ids})
+	OK(c, gin.H{"ok": true, "user_id": id, "role_ids": ids})
 }

@@ -50,30 +50,30 @@ func userOut(u *models.User) gin.H {
 func Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "请求格式错误"})
+		Fail(c, http.StatusBadRequest, 400, "请求格式错误")
 		return
 	}
 	if req.CaptchaToken != "" && req.CaptchaCode != "" {
 		if !verifyCaptcha(req.CaptchaToken, req.CaptchaCode) {
-			c.JSON(http.StatusBadRequest, gin.H{"detail": "验证码错误"})
+			Fail(c, http.StatusBadRequest, 400, "验证码错误")
 			return
 		}
 	} else if req.CaptchaToken != "" || req.CaptchaCode != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "验证码错误"})
+		Fail(c, http.StatusBadRequest, 400, "验证码错误")
 		return
 	}
 
 	user, err := security.LoadUserByUsername(database.DB, req.Username)
 	if err != nil || !security.VerifyPassword(req.Password, user.PasswordHash) {
-		c.JSON(http.StatusUnauthorized, gin.H{"detail": "用户名或密码错误"})
+		Fail(c, http.StatusUnauthorized, 401, "用户名或密码错误")
 		return
 	}
 	token, err := security.CreateAccessToken(user.Username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "令牌生成失败"})
+		Fail(c, http.StatusInternalServerError, 500, "令牌生成失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	OK(c, gin.H{
 		"access_token": token,
 		"token_type":   "bearer",
 		"user":         userOut(user),
@@ -89,5 +89,5 @@ func Login(c *gin.Context) {
 // @Security BearerAuth
 // @Router /api/v1/auth/me [get]
 func GetMe(c *gin.Context) {
-	c.JSON(http.StatusOK, userOut(middleware.CurrentUser(c)))
+	OK(c, userOut(middleware.CurrentUser(c)))
 }
