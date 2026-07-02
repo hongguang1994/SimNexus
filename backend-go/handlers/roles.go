@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"simnexus-go/database"
 	"simnexus-go/models"
+	"simnexus-go/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,9 +21,7 @@ type roleBody struct {
 	CanViewHistory     *bool   `json:"can_view_history"`
 	ReadOnly           *bool   `json:"read_only"`
 	CanSupport         *bool   `json:"can_support"`
-	AllowedModemIDs    *[]uint `json:"allowed_modem_ids"` // nil=不修改，[]uint{}=清除限制
-	// rawHasScope 内部标记，记录请求体是否包含 allowed_modem_ids 字段。
-	rawHasScope bool
+	AllowedModemIDs    *[]uint `json:"allowed_modem_ids"`
 }
 
 // ListRoles godoc
@@ -32,26 +32,17 @@ type roleBody struct {
 // @Security BearerAuth
 // @Router /api/v1/roles/ [get]
 func ListRoles(c *gin.Context) {
-	var roles []models.Role
-	database.DB.Preload("ModemScope").Order("id").Find(&roles)
+	svc := services.NewRoleService(database.DB)
+	roles, err := svc.ListRoles()
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
+	}
 	out := make([]map[string]interface{}, 0, len(roles))
 	for _, r := range roles {
 		out = append(out, models.RoleOut(r))
 	}
 	OK(c, out)
-}
-
-// applyModemScope 替换角色的设备范围关联；ids=nil 或空时清除所有关联。
-func applyModemScope(role *models.Role, ids *[]uint) {
-	if ids == nil || len(*ids) == 0 {
-		database.DB.Model(role).Association("ModemScope").Clear()
-		role.ModemScope = nil
-		return
-	}
-	var modems []models.Modem
-	database.DB.Where("id IN ?", *ids).Find(&modems)
-	database.DB.Model(role).Association("ModemScope").Replace(modems)
-	role.ModemScope = modems
 }
 
 // CreateRole godoc
@@ -64,28 +55,32 @@ func applyModemScope(role *models.Role, ids *[]uint) {
 // @Security BearerAuth
 // @Router /api/v1/roles/ [post]
 func CreateRole(c *gin.Context) {
+	// 先解析为 raw map，用于检测字段是否存在（区分"未传"与"传空"）
 	var raw map[string]interface{}
 	c.ShouldBindJSON(&raw)
 	var body roleBody
 	remarshal(raw, &body)
 
-	var existing models.Role
-	if database.DB.Where("name = ?", body.Name).First(&existing).Error == nil {
-		Fail(c, http.StatusBadRequest, 400, "角色名称已存在")
-		return
-	}
-	role := models.Role{
+	svc := services.NewRoleService(database.DB)
+	role, err := svc.CreateRole(services.RoleCreateInput{
 		Name:               body.Name,
 		Description:        body.Description,
-		CanViewSim:         derefBool(body.CanViewSim),
-		CanApproveRequests: derefBool(body.CanApproveRequests),
-		CanViewHistory:     derefBool(body.CanViewHistory),
-		ReadOnly:           derefBool(body.ReadOnly),
-		CanSupport:         derefBool(body.CanSupport),
+		CanViewSim:         body.CanViewSim,
+		CanApproveRequests: body.CanApproveRequests,
+		CanViewHistory:     body.CanViewHistory,
+		ReadOnly:           body.ReadOnly,
+		CanSupport:         body.CanSupport,
+		AllowedModemIDs:    body.AllowedModemIDs,
+	})
+	if err != nil {
+		if errors.Is(err, services.ErrRoleExists) {
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		} else {
+			Fail(c, http.StatusInternalServerError, 500, "创建失败")
+		}
+		return
 	}
-	database.DB.Create(&role)
-	applyModemScope(&role, body.AllowedModemIDs)
-	OK(c, models.RoleOut(role))
+	OK(c, models.RoleOut(*role))
 }
 
 // UpdateRole godoc
@@ -100,42 +95,40 @@ func CreateRole(c *gin.Context) {
 // @Router /api/v1/roles/{id} [patch]
 func UpdateRole(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var role models.Role
-	if database.DB.Preload("ModemScope").First(&role, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "角色不存在")
-		return
-	}
 	var raw map[string]interface{}
 	c.ShouldBindJSON(&raw)
 	var body roleBody
 	remarshal(raw, &body)
 
-	if body.Name != "" {
-		role.Name = body.Name
-	}
+	// 通过检测原始 map 的 key 判断请求体是否包含 allowed_modem_ids
+	_, hasScopeField := raw["allowed_modem_ids"]
+
+	var descPtr *string
 	if _, ok := raw["description"]; ok {
-		role.Description = body.Description
+		descPtr = &body.Description
 	}
-	if body.CanViewSim != nil {
-		role.CanViewSim = *body.CanViewSim
+
+	svc := services.NewRoleService(database.DB)
+	role, err := svc.UpdateRole(uint(id), services.RoleUpdateInput{
+		Name:               body.Name,
+		Description:        descPtr,
+		CanViewSim:         body.CanViewSim,
+		CanApproveRequests: body.CanApproveRequests,
+		CanViewHistory:     body.CanViewHistory,
+		ReadOnly:           body.ReadOnly,
+		CanSupport:         body.CanSupport,
+		AllowedModemIDs:    body.AllowedModemIDs,
+		HasScopeField:      hasScopeField,
+	})
+	if err != nil {
+		if errors.Is(err, services.ErrRoleNotFound) {
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		} else {
+			Fail(c, http.StatusInternalServerError, 500, "更新失败")
+		}
+		return
 	}
-	if body.CanApproveRequests != nil {
-		role.CanApproveRequests = *body.CanApproveRequests
-	}
-	if body.CanViewHistory != nil {
-		role.CanViewHistory = *body.CanViewHistory
-	}
-	if body.ReadOnly != nil {
-		role.ReadOnly = *body.ReadOnly
-	}
-	if body.CanSupport != nil {
-		role.CanSupport = *body.CanSupport
-	}
-	database.DB.Save(&role)
-	if _, ok := raw["allowed_modem_ids"]; ok {
-		applyModemScope(&role, body.AllowedModemIDs)
-	}
-	OK(c, models.RoleOut(role))
+	OK(c, models.RoleOut(*role))
 }
 
 // DeleteRole godoc
@@ -148,50 +141,17 @@ func UpdateRole(c *gin.Context) {
 // @Router /api/v1/roles/{id} [delete]
 func DeleteRole(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var role models.Role
-	if database.DB.First(&role, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "角色不存在")
+	svc := services.NewRoleService(database.DB)
+	if err := svc.DeleteRole(uint(id)); err != nil {
+		switch {
+		case errors.Is(err, services.ErrRoleNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		case errors.Is(err, services.ErrSystemRole):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "删除失败")
+		}
 		return
 	}
-	if role.IsSystem {
-		Fail(c, http.StatusBadRequest, 400, "系统预置角色不可删除")
-		return
-	}
-	database.DB.Delete(&role)
 	OK(c, gin.H{"ok": true})
-}
-
-type setRolesBody struct {
-	RoleIDs []uint `json:"role_ids"`
-}
-
-// SetUserRoles godoc
-// @Summary 设置用户角色
-// @Tags 角色管理
-// @Accept json
-// @Produce json
-// @Param id path int true "用户ID"
-// @Param body body setRolesBody true "角色ID列表"
-// @Success 200 {object} handlers.R
-// @Security BearerAuth
-// @Router /api/v1/roles/users/{id}/roles [put]
-func SetUserRoles(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	var user models.User
-	if database.DB.First(&user, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "用户不存在")
-		return
-	}
-	var body setRolesBody
-	c.ShouldBindJSON(&body)
-	var roles []models.Role
-	if len(body.RoleIDs) > 0 {
-		database.DB.Where("id IN ?", body.RoleIDs).Find(&roles)
-	}
-	database.DB.Model(&user).Association("RbacRoles").Replace(roles)
-	ids := make([]uint, 0, len(roles))
-	for _, r := range roles {
-		ids = append(ids, r.ID)
-	}
-	OK(c, gin.H{"ok": true, "user_id": id, "role_ids": ids})
 }

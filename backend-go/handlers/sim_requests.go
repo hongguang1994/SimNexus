@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,128 +14,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// approverModemScope 返回审批员可管理的设备 ID 集合。
-// unrestricted=true 表示无限制（管理员或 ModemScope 为空的审批角色）。
-func approverModemScope(u *models.User) ([]uint, bool) {
-	if u.IsAdmin() {
-		return nil, true
-	}
-	var approverRoles []models.Role
-	for _, r := range u.RbacRoles {
-		if r.CanApproveRequests {
-			approverRoles = append(approverRoles, r)
-		}
-	}
-	if len(approverRoles) == 0 {
-		return []uint{}, false
-	}
-	set := map[uint]struct{}{}
-	for _, r := range approverRoles {
-		if len(r.ModemScope) == 0 {
-			return nil, true
-		}
-		for _, m := range r.ModemScope {
-			set[m.ID] = struct{}{}
-		}
-	}
-	ids := make([]uint, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
-	}
-	return ids, false
-}
-
-// inScope 判断给定设备是否在审批员的管辖范围内。
-func inScope(ids []uint, unrestricted bool, modemID uint) bool {
-	if unrestricted {
-		return true
-	}
-	for _, id := range ids {
-		if id == modemID {
-			return true
-		}
-	}
-	return false
-}
-
-// fmtRequest 将申请记录格式化为 API 响应，包含用户名、设备名、授权状态和是否过期。
-func fmtRequest(r *models.SimAccessRequest, grants map[[2]uint]*models.SimGrant) gin.H {
-	now := time.Now()
-	var username, modemName string
-	var user models.User
-	if database.DB.First(&user, r.UserID).Error == nil {
-		username = user.Username
-	}
-	var modem models.Modem
-	if database.DB.First(&modem, r.ModemID).Error == nil && modem.Alias != "" {
-		modemName = modem.Alias
-	} else {
-		modemName = "SIM " + strconv.Itoa(int(r.ModemID))
-	}
-	g := grants[[2]uint{r.UserID, r.ModemID}]
-	var grantedLevel interface{}
-	var expiresAt interface{}
-	isExpired := false
-	if g != nil {
-		grantedLevel = g.GrantedLevel
-		if g.ExpiresAt != nil {
-			expiresAt = g.ExpiresAt.Format(time.RFC3339)
-			isExpired = g.ExpiresAt.Before(now)
-		}
-	}
-	return gin.H{
-		"id":              r.ID,
-		"user_id":         r.UserID,
-		"username":        username,
-		"modem_id":        r.ModemID,
-		"modem_name":      modemName,
-		"status":          r.Status,
-		"requested_level": r.RequestedLevel,
-		"granted_level":   grantedLevel,
-		"reason":          r.Reason,
-		"admin_note":      r.AdminNote,
-		"expires_at":      expiresAt,
-		"created_at":      r.CreatedAt,
-		"updated_at":      r.UpdatedAt,
-		"is_expired":      isExpired,
-	}
-}
-
-// upsertGrant 创建或更新 (userID, modemID) 的授权记录，已有记录则原地更新。
-func upsertGrant(userID, modemID uint, level string, expiresAt *time.Time, grantedByID uint, requestID *uint) {
-	now := time.Now()
-	var existing models.SimGrant
-	err := database.DB.Where("user_id = ? AND modem_id = ?", userID, modemID).First(&existing).Error
-	if err == nil {
-		existing.GrantedLevel = level
-		existing.ExpiresAt = expiresAt
-		existing.GrantedByID = &grantedByID
-		if requestID != nil {
-			existing.RequestID = requestID
-		}
-		existing.UpdatedAt = now
-		database.DB.Save(&existing)
-	} else {
-		database.DB.Create(&models.SimGrant{
-			UserID: userID, ModemID: modemID, GrantedLevel: level,
-			ExpiresAt: expiresAt, GrantedByID: &grantedByID, RequestID: requestID,
-			CreatedAt: now, UpdatedAt: now,
-		})
-	}
-}
-
-// modemName 返回设备的展示名称（别名优先，否则为 "SIM <id>"）。
-func modemName(modemID uint) string {
-	var modem models.Modem
-	if database.DB.First(&modem, modemID).Error == nil && modem.Alias != "" {
-		return modem.Alias
-	}
-	return "SIM " + strconv.Itoa(int(modemID))
-}
-
+// requestCreate 申请 SIM 卡访问权限的请求体。
 type requestCreate struct {
 	ModemID        uint   `json:"modem_id"`
-	RequestedLevel string `json:"requested_level"`
+	RequestedLevel string `json:"requested_level"` // view 或 use，默认 use
 	Reason         string `json:"reason"`
 }
 
@@ -151,35 +34,18 @@ func CreateSimRequest(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var body requestCreate
 	c.ShouldBindJSON(&body)
-	if body.RequestedLevel == "" {
-		body.RequestedLevel = models.LevelUse
-	}
-	if body.RequestedLevel != models.LevelView && body.RequestedLevel != models.LevelUse {
-		Fail(c, http.StatusBadRequest, 400, "requested_level 必须是 view 或 use")
-		return
-	}
-	now := time.Now()
-	var eg models.SimGrant
-	if database.DB.Where("user_id = ? AND modem_id = ?", me.ID, body.ModemID).First(&eg).Error == nil {
-		if eg.ExpiresAt == nil || eg.ExpiresAt.After(now) {
-			Fail(c, http.StatusBadRequest, 400, "已有有效授权，无需重复申请")
-			return
+	svc := services.NewSimRequestService(database.DB)
+	if err := svc.CreateRequest(me.ID, body.ModemID, body.RequestedLevel, body.Reason); err != nil {
+		switch {
+		case errors.Is(err, services.ErrInvalidLevel):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		case errors.Is(err, services.ErrDuplicateRequest):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "提交失败")
 		}
-	}
-	var pending models.SimAccessRequest
-	if database.DB.Where("user_id = ? AND modem_id = ? AND status = ?", me.ID, body.ModemID, models.ReqPending).First(&pending).Error == nil {
-		Fail(c, http.StatusBadRequest, 400, "已有待审批的申请，请勿重复提交")
 		return
 	}
-	var reason *string
-	if body.Reason != "" {
-		reason = &body.Reason
-	}
-	req := models.SimAccessRequest{
-		UserID: me.ID, ModemID: body.ModemID,
-		RequestedLevel: body.RequestedLevel, Reason: reason, Status: models.ReqPending,
-	}
-	database.DB.Create(&req)
 	services.Push("sim_request", "新的SIM卡申请",
 		"用户 "+me.Username+" 申请访问 SIM "+strconv.Itoa(int(body.ModemID)), "admin", nil)
 	OK(c, gin.H{"ok": true})
@@ -194,17 +60,15 @@ func CreateSimRequest(c *gin.Context) {
 // @Router /api/v1/sim-requests/my [get]
 func MyRequests(c *gin.Context) {
 	me := middleware.CurrentUser(c)
-	var reqs []models.SimAccessRequest
-	database.DB.Where("user_id = ?", me.ID).Order("created_at desc").Find(&reqs)
-	var grants []models.SimGrant
-	database.DB.Where("user_id = ?", me.ID).Find(&grants)
-	gm := map[[2]uint]*models.SimGrant{}
-	for i := range grants {
-		gm[[2]uint{grants[i].UserID, grants[i].ModemID}] = &grants[i]
+	svc := services.NewSimRequestService(database.DB)
+	reqs, gm, err := svc.ListMyRequests(me.ID)
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
 	}
-	out := make([]gin.H, 0, len(reqs))
+	out := make([]map[string]interface{}, 0, len(reqs))
 	for i := range reqs {
-		out = append(out, fmtRequest(&reqs[i], gm))
+		out = append(out, svc.FmtRequest(&reqs[i], gm))
 	}
 	OK(c, out)
 }
@@ -218,11 +82,16 @@ func MyRequests(c *gin.Context) {
 // @Router /api/v1/sim-requests/my-grants [get]
 func MyGrants(c *gin.Context) {
 	me := middleware.CurrentUser(c)
+	svc := services.NewSimRequestService(database.DB)
+	grants, err := svc.ListMyGrants(me.ID)
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
+	}
 	now := time.Now()
-	var grants []models.SimGrant
-	database.DB.Where("user_id = ?", me.ID).Find(&grants)
 	out := make([]gin.H, 0)
 	for _, g := range grants {
+		// 跳过已过期的授权
 		if g.ExpiresAt != nil && g.ExpiresAt.Before(now) {
 			continue
 		}
@@ -249,42 +118,25 @@ func MyGrants(c *gin.Context) {
 // @Router /api/v1/sim-requests/ [get]
 func ListRequests(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
-	ids, unrestricted := approverModemScope(approver)
-	q := database.DB.Model(&models.SimAccessRequest{})
-	if !unrestricted {
-		q = q.Where("modem_id IN ?", ids)
+	svc := services.NewSimRequestService(database.DB)
+	scope := svc.GetApproverScope(approver)
+	reqs, gm, err := svc.ListRequests(scope, c.Query("status"))
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
 	}
-	if st := c.Query("status"); st != "" {
-		q = q.Where("status = ?", st)
-	}
-	var reqs []models.SimAccessRequest
-	q.Order("created_at desc").Find(&reqs)
-
-	gm := map[[2]uint]*models.SimGrant{}
-	if len(reqs) > 0 {
-		userIDs := map[uint]bool{}
-		modemIDs := map[uint]bool{}
-		for _, r := range reqs {
-			userIDs[r.UserID] = true
-			modemIDs[r.ModemID] = true
-		}
-		var grants []models.SimGrant
-		database.DB.Where("user_id IN ? AND modem_id IN ?", keys(userIDs), keys(modemIDs)).Find(&grants)
-		for i := range grants {
-			gm[[2]uint{grants[i].UserID, grants[i].ModemID}] = &grants[i]
-		}
-	}
-	out := make([]gin.H, 0, len(reqs))
+	out := make([]map[string]interface{}, 0, len(reqs))
 	for i := range reqs {
-		out = append(out, fmtRequest(&reqs[i], gm))
+		out = append(out, svc.FmtRequest(&reqs[i], gm))
 	}
 	OK(c, out)
 }
 
+// approveBody 批准申请的请求体。
 type approveBody struct {
-	GrantedLevel string     `json:"granted_level"`
-	ExpiresAt    *time.Time `json:"expires_at"`
-	AdminNote    string     `json:"admin_note"`
+	GrantedLevel string     `json:"granted_level"` // view 或 use，默认 use
+	ExpiresAt    *time.Time `json:"expires_at"`    // 有效期（nil 表示永久）
+	AdminNote    string     `json:"admin_note"`    // 审批备注
 }
 
 // ApproveRequest godoc
@@ -305,29 +157,29 @@ func ApproveRequest(c *gin.Context) {
 	if body.GrantedLevel == "" {
 		body.GrantedLevel = models.LevelUse
 	}
-	if body.GrantedLevel != models.LevelView && body.GrantedLevel != models.LevelUse {
-		Fail(c, http.StatusBadRequest, 400, "granted_level 必须是 view 或 use")
+	svc := services.NewSimRequestService(database.DB)
+	scope := svc.GetApproverScope(approver)
+	if err := svc.ApproveRequest(approver.ID, scope, uint(id), body.GrantedLevel, body.ExpiresAt, body.AdminNote); err != nil {
+		switch {
+		case errors.Is(err, services.ErrInvalidLevel):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		case errors.Is(err, services.ErrSimRequestNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		case errors.Is(err, services.ErrSimRequestForbidden):
+			Fail(c, http.StatusForbidden, 403, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "审批失败")
+		}
 		return
 	}
+	// 查询申请信息用于推送通知
 	var req models.SimAccessRequest
-	if database.DB.First(&req, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "申请不存在")
-		return
-	}
-	ids, unrestricted := approverModemScope(approver)
-	if !inScope(ids, unrestricted, req.ModemID) {
-		Fail(c, http.StatusForbidden, 403, "无权审批该设备的申请")
-		return
-	}
-	req.Status = models.ReqApproved
-	setNote(&req, body.AdminNote)
-	req.UpdatedAt = time.Now()
-	database.DB.Save(&req)
-	upsertGrant(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt, approver.ID, &req.ID)
-	notifyApproved(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt)
+	database.DB.First(&req, id)
+	notifyApproved(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt, svc)
 	OK(c, gin.H{"ok": true})
 }
 
+// rejectBody 拒绝申请的请求体。
 type rejectBody struct {
 	AdminNote string `json:"admin_note"`
 }
@@ -347,28 +199,30 @@ func RejectRequest(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var body rejectBody
 	c.ShouldBindJSON(&body)
-	var req models.SimAccessRequest
-	if database.DB.First(&req, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "申请不存在")
+	svc := services.NewSimRequestService(database.DB)
+	scope := svc.GetApproverScope(approver)
+	req, err := svc.RejectRequest(scope, uint(id), body.AdminNote)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrSimRequestNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		case errors.Is(err, services.ErrSimRequestForbidden):
+			Fail(c, http.StatusForbidden, 403, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "审批失败")
+		}
 		return
 	}
-	ids, unrestricted := approverModemScope(approver)
-	if !inScope(ids, unrestricted, req.ModemID) {
-		Fail(c, http.StatusForbidden, 403, "无权审批该设备的申请")
-		return
-	}
-	req.Status = models.ReqRejected
-	setNote(&req, body.AdminNote)
-	req.UpdatedAt = time.Now()
-	database.DB.Save(&req)
-	body2 := "你对 " + modemName(req.ModemID) + " 的申请未获批准"
+	// 推送拒绝通知给申请用户
+	msg := "你对 " + svc.ModemDisplayName(req.ModemID) + " 的申请未获批准"
 	if body.AdminNote != "" {
-		body2 += "，原因：" + body.AdminNote
+		msg += "，原因：" + body.AdminNote
 	}
-	services.Push("sim_rejected", "SIM卡申请已拒绝", body2, "user", &req.UserID)
+	services.Push("sim_rejected", "SIM卡申请已拒绝", msg, "user", &req.UserID)
 	OK(c, gin.H{"ok": true})
 }
 
+// batchApproveBody 批量审批通过的请求体。
 type batchApproveBody struct {
 	IDs          []uint     `json:"ids"`
 	GrantedLevel string     `json:"granted_level"`
@@ -392,30 +246,17 @@ func BatchApprove(c *gin.Context) {
 	if body.GrantedLevel == "" {
 		body.GrantedLevel = models.LevelUse
 	}
-	if body.GrantedLevel != models.LevelView && body.GrantedLevel != models.LevelUse {
-		Fail(c, http.StatusBadRequest, 400, "granted_level 必须是 view 或 use")
+	svc := services.NewSimRequestService(database.DB)
+	scope := svc.GetApproverScope(approver)
+	count, err := svc.BatchApprove(approver.ID, scope, body.IDs, body.GrantedLevel, body.ExpiresAt, body.AdminNote)
+	if err != nil {
+		Fail(c, http.StatusBadRequest, 400, err.Error())
 		return
-	}
-	ids, unrestricted := approverModemScope(approver)
-	var reqs []models.SimAccessRequest
-	database.DB.Where("id IN ?", body.IDs).Find(&reqs)
-	count := 0
-	for i := range reqs {
-		req := &reqs[i]
-		if !inScope(ids, unrestricted, req.ModemID) {
-			continue
-		}
-		req.Status = models.ReqApproved
-		setNote(req, body.AdminNote)
-		req.UpdatedAt = time.Now()
-		database.DB.Save(req)
-		upsertGrant(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt, approver.ID, &req.ID)
-		notifyApproved(req.UserID, req.ModemID, body.GrantedLevel, body.ExpiresAt)
-		count++
 	}
 	OK(c, gin.H{"approved": count})
 }
 
+// directGrantBody 直接授权（无需申请）的请求体。
 type directGrantBody struct {
 	UserID       uint       `json:"user_id"`
 	ModemID      uint       `json:"modem_id"`
@@ -440,27 +281,28 @@ func DirectGrant(c *gin.Context) {
 	if body.GrantedLevel == "" {
 		body.GrantedLevel = models.LevelUse
 	}
-	if body.GrantedLevel != models.LevelView && body.GrantedLevel != models.LevelUse {
-		Fail(c, http.StatusBadRequest, 400, "granted_level 必须是 view 或 use")
+	svc := services.NewSimRequestService(database.DB)
+	scope := svc.GetApproverScope(approver)
+	if err := svc.DirectGrant(approver.ID, scope, body.UserID, body.ModemID, body.GrantedLevel, body.ExpiresAt); err != nil {
+		switch {
+		case errors.Is(err, services.ErrInvalidLevel):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		case errors.Is(err, services.ErrDirectGrantForbidden):
+			Fail(c, http.StatusForbidden, 403, err.Error())
+		case errors.Is(err, services.ErrModemNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "授权失败")
+		}
 		return
 	}
-	ids, unrestricted := approverModemScope(approver)
-	if !inScope(ids, unrestricted, body.ModemID) {
-		Fail(c, http.StatusForbidden, 403, "无权授权该设备")
-		return
-	}
-	var modem models.Modem
-	if database.DB.First(&modem, body.ModemID).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "设备不存在")
-		return
-	}
-	upsertGrant(body.UserID, body.ModemID, body.GrantedLevel, body.ExpiresAt, approver.ID, nil)
-	label := "使用权限"
+	// 推送授权通知给被授权用户
+	levelLabel := "使用权限"
 	if body.GrantedLevel == models.LevelView {
-		label = "查看权限"
+		levelLabel = "查看权限"
 	}
 	services.Push("sim_approved", "SIM卡权限已授予",
-		"管理员已授予你 "+modemName(body.ModemID)+" 的"+label, "user", &body.UserID)
+		"管理员已授予你 "+svc.ModemDisplayName(body.ModemID)+" 的"+levelLabel, "user", &body.UserID)
 	OK(c, gin.H{"ok": true})
 }
 
@@ -475,35 +317,29 @@ func DirectGrant(c *gin.Context) {
 func RevokeGrant(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
-	var grant models.SimGrant
-	if database.DB.First(&grant, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "授权记录不存在")
-		return
-	}
-	ids, unrestricted := approverModemScope(approver)
-	if !inScope(ids, unrestricted, grant.ModemID) {
-		Fail(c, http.StatusForbidden, 403, "无权撤销该设备的授权")
+	svc := services.NewSimRequestService(database.DB)
+	scope := svc.GetApproverScope(approver)
+	grant, err := svc.RevokeGrant(scope, uint(id))
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrGrantNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		case errors.Is(err, services.ErrGrantForbidden):
+			Fail(c, http.StatusForbidden, 403, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "撤销失败")
+		}
 		return
 	}
 	uid := grant.UserID
 	mid := grant.ModemID
-	database.DB.Delete(&grant)
 	services.Push("sim_revoked", "SIM卡权限已撤销",
 		"你对 SIM "+strconv.Itoa(int(mid))+" 的访问权限已被撤销", "user", &uid)
 	OK(c, gin.H{"ok": true})
 }
 
-// setNote 将审批备注写入申请记录，空字符串时置 nil。
-func setNote(r *models.SimAccessRequest, note string) {
-	if note == "" {
-		r.AdminNote = nil
-	} else {
-		r.AdminNote = &note
-	}
-}
-
-// notifyApproved 向用户推送申请批准通知，包含权限级别和有效期信息。
-func notifyApproved(userID, modemID uint, level string, expiresAt *time.Time) {
+// notifyApproved 向用户推送申请批准通知。
+func notifyApproved(userID, modemID uint, level string, expiresAt *time.Time, svc *services.SimRequestService) {
 	levelLabel := "使用权限"
 	if level == models.LevelView {
 		levelLabel = "查看权限"
@@ -513,14 +349,5 @@ func notifyApproved(userID, modemID uint, level string, expiresAt *time.Time) {
 		expStr = "，有效期至 " + expiresAt.Format("2006-01-02")
 	}
 	services.Push("sim_approved", "SIM卡申请已批准",
-		"你对 "+modemName(modemID)+" 的申请已获批准"+levelLabel+expStr, "user", &userID)
-}
-
-// keys 将 map[uint]bool 的所有键提取为 slice。
-func keys(m map[uint]bool) []uint {
-	out := make([]uint, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
+		"你对 "+svc.ModemDisplayName(modemID)+" 的申请已获批准"+levelLabel+expStr, "user", &userID)
 }

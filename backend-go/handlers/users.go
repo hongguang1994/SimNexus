@@ -1,13 +1,12 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"simnexus-go/database"
 	"simnexus-go/middleware"
-	"simnexus-go/models"
-	"simnexus-go/security"
 	"simnexus-go/services"
 
 	"github.com/gin-gonic/gin"
@@ -21,8 +20,12 @@ import (
 // @Security BearerAuth
 // @Router /api/v1/users/ [get]
 func ListUsers(c *gin.Context) {
-	var users []models.User
-	database.DB.Preload("RbacRoles").Order("id").Find(&users)
+	svc := services.NewUserService(database.DB)
+	users, err := svc.ListUsers()
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
+	}
 	out := make([]gin.H, 0, len(users))
 	for i := range users {
 		out = append(out, userOut(&users[i]))
@@ -30,6 +33,7 @@ func ListUsers(c *gin.Context) {
 	OK(c, out)
 }
 
+// userCreate 创建用户的请求体。
 type userCreate struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -51,26 +55,26 @@ func CreateUser(c *gin.Context) {
 		Fail(c, http.StatusBadRequest, 400, "请求格式错误")
 		return
 	}
-	var existing models.User
-	if database.DB.Where("username = ?", data.Username).First(&existing).Error == nil {
-		Fail(c, http.StatusBadRequest, 400, "用户名已存在")
+	svc := services.NewUserService(database.DB)
+	user, err := svc.CreateUser(data.Username, data.Password, data.Role)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrUserExists):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		case errors.Is(err, services.ErrPasswordTooShort):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "创建失败")
+		}
 		return
 	}
-	if len(data.Password) < 6 {
-		Fail(c, http.StatusBadRequest, 400, "密码至少 6 位")
-		return
-	}
-	role := data.Role
-	if role == "" {
-		role = models.RoleUser
-	}
-	hash, _ := security.HashPassword(data.Password)
-	user := models.User{Username: data.Username, PasswordHash: hash, Role: role, IsActive: true}
-	database.DB.Create(&user)
-	services.Push("new_user", "新用户注册", "新用户 "+user.Username+" 已创建（角色："+user.Role+"）", "admin", nil)
-	OK(c, userOut(&user))
+	// 发送通知给管理员
+	services.Push("new_user", "新用户注册",
+		"新用户 "+user.Username+" 已创建（角色："+user.Role+"）", "admin", nil)
+	OK(c, userOut(user))
 }
 
+// userUpdate 修改用户的请求体，字段均为可选。
 type userUpdate struct {
 	Role     *string `json:"role"`
 	IsActive *bool   `json:"is_active"`
@@ -88,21 +92,15 @@ type userUpdate struct {
 // @Router /api/v1/users/{id} [patch]
 func UpdateUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var user models.User
-	if database.DB.Preload("RbacRoles").First(&user, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "用户不存在")
-		return
-	}
 	var data userUpdate
 	c.ShouldBindJSON(&data)
-	if data.Role != nil {
-		user.Role = *data.Role
+	svc := services.NewUserService(database.DB)
+	user, err := svc.UpdateUser(uint(id), data.Role, data.IsActive)
+	if err != nil {
+		Fail(c, http.StatusNotFound, 404, err.Error())
+		return
 	}
-	if data.IsActive != nil {
-		user.IsActive = *data.IsActive
-	}
-	database.DB.Save(&user)
-	OK(c, userOut(&user))
+	OK(c, userOut(user))
 }
 
 // DeleteUser godoc
@@ -116,19 +114,22 @@ func UpdateUser(c *gin.Context) {
 func DeleteUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	me := middleware.CurrentUser(c)
-	if uint(id) == me.ID {
-		Fail(c, http.StatusBadRequest, 400, "不能删除自己")
+	svc := services.NewUserService(database.DB)
+	if err := svc.DeleteUser(uint(id), me.ID); err != nil {
+		switch {
+		case errors.Is(err, services.ErrCannotDeleteSelf):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		case errors.Is(err, services.ErrUserNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "删除失败")
+		}
 		return
 	}
-	var user models.User
-	if database.DB.First(&user, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "用户不存在")
-		return
-	}
-	database.DB.Delete(&user)
 	OK(c, gin.H{"ok": true})
 }
 
+// passwordReset 管理员重置密码请求体。
 type passwordReset struct {
 	NewPassword string `json:"new_password"`
 }
@@ -145,22 +146,25 @@ type passwordReset struct {
 // @Router /api/v1/users/{id}/reset-password [post]
 func ResetPassword(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var user models.User
-	if database.DB.Preload("RbacRoles").First(&user, id).Error != nil {
-		Fail(c, http.StatusNotFound, 404, "用户不存在")
-		return
-	}
 	var data passwordReset
 	c.ShouldBindJSON(&data)
-	if len(data.NewPassword) < 6 {
-		Fail(c, http.StatusBadRequest, 400, "密码至少 6 位")
+	svc := services.NewUserService(database.DB)
+	user, err := svc.ResetPassword(uint(id), data.NewPassword)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrUserNotFound):
+			Fail(c, http.StatusNotFound, 404, err.Error())
+		case errors.Is(err, services.ErrPasswordTooShort):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "重置失败")
+		}
 		return
 	}
-	user.PasswordHash, _ = security.HashPassword(data.NewPassword)
-	database.DB.Save(&user)
-	OK(c, userOut(&user))
+	OK(c, userOut(user))
 }
 
+// passwordChange 用户修改自己密码的请求体。
 type passwordChange struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`
@@ -179,15 +183,45 @@ func ChangePassword(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var data passwordChange
 	c.ShouldBindJSON(&data)
-	if !security.VerifyPassword(data.OldPassword, me.PasswordHash) {
-		Fail(c, http.StatusBadRequest, 400, "原密码错误")
+	svc := services.NewUserService(database.DB)
+	if err := svc.ChangePassword(me, data.OldPassword, data.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, services.ErrWrongPassword):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		case errors.Is(err, services.ErrPasswordTooShort):
+			Fail(c, http.StatusBadRequest, 400, err.Error())
+		default:
+			Fail(c, http.StatusInternalServerError, 500, "修改失败")
+		}
 		return
 	}
-	if len(data.NewPassword) < 6 {
-		Fail(c, http.StatusBadRequest, 400, "密码至少 6 位")
-		return
-	}
-	me.PasswordHash, _ = security.HashPassword(data.NewPassword)
-	database.DB.Save(me)
 	OK(c, gin.H{"ok": true})
+}
+
+// setRolesBody 设置用户角色的请求体。
+type setRolesBody struct {
+	RoleIDs []uint `json:"role_ids"`
+}
+
+// SetUserRoles godoc
+// @Summary 设置用户角色
+// @Tags 角色管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Param body body setRolesBody true "角色ID列表"
+// @Success 200 {object} handlers.R
+// @Security BearerAuth
+// @Router /api/v1/roles/users/{id}/roles [put]
+func SetUserRoles(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var body setRolesBody
+	c.ShouldBindJSON(&body)
+	svc := services.NewUserService(database.DB)
+	roleIDs, err := svc.SetUserRoles(uint(id), body.RoleIDs)
+	if err != nil {
+		Fail(c, http.StatusNotFound, 404, err.Error())
+		return
+	}
+	OK(c, gin.H{"ok": true, "user_id": id, "role_ids": roleIDs})
 }

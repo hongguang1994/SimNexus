@@ -7,12 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"simnexus-go/config"
 	"simnexus-go/database"
 	"simnexus-go/middleware"
-	"simnexus-go/models"
 	"simnexus-go/security"
 	"simnexus-go/services"
 
@@ -22,25 +20,10 @@ import (
 // maxSupportFileSize 客服附件上传大小上限（20MB）。
 const maxSupportFileSize = 20 * 1024 * 1024
 
+// supportImageTypes 支持内联预览的图片 MIME 类型。
 var supportImageTypes = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/gif": true,
 	"image/webp": true, "image/bmp": true,
-}
-
-// supportMsgOut 将支持消息格式化为 API 响应，包含发送人用户名。
-func supportMsgOut(m *models.SupportMessage) gin.H {
-	var sender models.User
-	name := "?"
-	if database.DB.First(&sender, m.SenderID).Error == nil {
-		name = sender.Username
-	}
-	return gin.H{
-		"id": m.ID, "user_id": m.UserID, "sender_id": m.SenderID,
-		"sender_name": name, "content": m.Content, "is_from_user": m.IsFromUser,
-		"is_read": m.IsRead, "created_at": m.CreatedAt,
-		"attachment_url": m.AttachmentURL, "attachment_name": m.AttachmentName,
-		"attachment_type": m.AttachmentType,
-	}
 }
 
 // SupportUpload godoc
@@ -63,6 +46,7 @@ func SupportUpload(c *gin.Context) {
 		return
 	}
 	os.MkdirAll(config.C.UploadDir, 0o755)
+	// 生成随机文件名防止路径遍历，保留原始扩展名
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	buf := make([]byte, 16)
 	rand.Read(buf)
@@ -88,6 +72,7 @@ func SupportUpload(c *gin.Context) {
 // @Router /api/v1/support/files/{filename} [get]
 func SupportServeFile(c *gin.Context) {
 	filename := c.Param("filename")
+	// 防止路径遍历攻击
 	if strings.Contains(filename, "/") || strings.Contains(filename, "..") {
 		Fail(c, http.StatusBadRequest, 400, "非法文件名")
 		return
@@ -100,20 +85,13 @@ func SupportServeFile(c *gin.Context) {
 	c.File(path)
 }
 
+// messageIn 发送客服消息的请求体。
 type messageIn struct {
 	Content        string `json:"content"`
-	UserID         *uint  `json:"user_id"`
-	AttachmentURL  string `json:"attachment_url"`
-	AttachmentName string `json:"attachment_name"`
-	AttachmentType string `json:"attachment_type"`
-}
-
-// strPtr 将字符串转为指针，空字符串返回 nil（用于可选字段存储）。
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
+	UserID         *uint  `json:"user_id"`         // 客服发消息时必填（目标用户）
+	AttachmentURL  string `json:"attachment_url"`  // 上传后返回的访问路径
+	AttachmentName string `json:"attachment_name"` // 原始文件名
+	AttachmentType string `json:"attachment_type"` // image 或 file
 }
 
 // SupportSendMessage godoc
@@ -133,51 +111,26 @@ func SupportSendMessage(c *gin.Context) {
 		Fail(c, http.StatusBadRequest, 400, "消息或附件不能同时为空")
 		return
 	}
-	staff := security.IsSupportStaff(me)
-	var msg models.SupportMessage
-	if staff {
-		if body.UserID == nil {
-			Fail(c, http.StatusBadRequest, 400, "客服必须指定目标用户")
-			return
-		}
-		var target models.User
-		if database.DB.First(&target, *body.UserID).Error != nil {
-			Fail(c, http.StatusNotFound, 404, "用户不存在")
-			return
-		}
-		msg = models.SupportMessage{
-			UserID: *body.UserID, SenderID: me.ID,
-			Content: strings.TrimSpace(body.Content), IsFromUser: false,
-		}
-	} else {
-		msg = models.SupportMessage{
-			UserID: me.ID, SenderID: me.ID,
-			Content: strings.TrimSpace(body.Content), IsFromUser: true,
-		}
+	svc := services.NewSupportService(database.DB)
+	msg, err := svc.SendMessage(me, services.SendMessageInput{
+		Content:        body.Content,
+		AttachmentURL:  body.AttachmentURL,
+		AttachmentName: body.AttachmentName,
+		AttachmentType: body.AttachmentType,
+		TargetUserID:   body.UserID,
+	})
+	if err != nil {
+		Fail(c, http.StatusBadRequest, 400, err.Error())
+		return
 	}
-	msg.AttachmentURL = strPtr(body.AttachmentURL)
-	msg.AttachmentName = strPtr(body.AttachmentName)
-	msg.AttachmentType = strPtr(body.AttachmentType)
-	msg.CreatedAt = time.Now()
-	database.DB.Create(&msg)
-
-	preview := strings.TrimSpace(body.Content)
-	if len(preview) > 40 {
-		preview = preview[:40]
-	}
-	if preview == "" {
-		if body.AttachmentName != "" {
-			preview = "[" + body.AttachmentName + "]"
-		} else {
-			preview = "[附件]"
-		}
-	}
-	if staff {
+	// 推送通知：客服回复通知用户；用户消息通知客服
+	preview := previewText(body.Content, body.AttachmentName)
+	if security.IsSupportStaff(me) {
 		services.Push("support_reply", "客服已回复您的咨询", preview, "user", body.UserID)
 	} else {
 		services.Push("support_msg", "用户咨询："+me.Username, preview, "support", nil)
 	}
-	OK(c, supportMsgOut(&msg))
+	OK(c, svc.MsgOut(msg))
 }
 
 // SupportGetMessages godoc
@@ -191,25 +144,20 @@ func SupportSendMessage(c *gin.Context) {
 // @Router /api/v1/support/messages [get]
 func SupportGetMessages(c *gin.Context) {
 	me := middleware.CurrentUser(c)
-	q := database.DB.Model(&models.SupportMessage{})
-	if security.IsSupportStaff(me) {
-		uid := c.Query("user_id")
-		if uid == "" {
-			Fail(c, http.StatusBadRequest, 400, "需要指定 user_id")
-			return
-		}
-		q = q.Where("user_id = ?", uid)
-	} else {
-		q = q.Where("user_id = ?", me.ID)
+	// 客服必须指定 user_id
+	if security.IsSupportStaff(me) && c.Query("user_id") == "" {
+		Fail(c, http.StatusBadRequest, 400, "需要指定 user_id")
+		return
 	}
-	if since := c.Query("since_id"); since != "" {
-		q = q.Where("id > ?", since)
+	svc := services.NewSupportService(database.DB)
+	msgs, err := svc.GetMessages(me, c.Query("user_id"), c.Query("since_id"))
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
 	}
-	var msgs []models.SupportMessage
-	q.Order("created_at asc").Find(&msgs)
-	out := make([]gin.H, 0, len(msgs))
+	out := make([]map[string]interface{}, 0, len(msgs))
 	for i := range msgs {
-		out = append(out, supportMsgOut(&msgs[i]))
+		out = append(out, svc.MsgOut(&msgs[i]))
 	}
 	OK(c, out)
 }
@@ -224,20 +172,12 @@ func SupportGetMessages(c *gin.Context) {
 // @Router /api/v1/support/messages/read [post]
 func SupportMarkRead(c *gin.Context) {
 	me := middleware.CurrentUser(c)
-	if security.IsSupportStaff(me) {
-		uid := c.Query("user_id")
-		if uid == "" {
-			Fail(c, http.StatusBadRequest, 400, "需要 user_id")
-			return
-		}
-		database.DB.Model(&models.SupportMessage{}).
-			Where("user_id = ? AND is_from_user = ? AND is_read = ?", uid, true, false).
-			Update("is_read", true)
-	} else {
-		database.DB.Model(&models.SupportMessage{}).
-			Where("user_id = ? AND is_from_user = ? AND is_read = ?", me.ID, false, false).
-			Update("is_read", true)
+	if security.IsSupportStaff(me) && c.Query("user_id") == "" {
+		Fail(c, http.StatusBadRequest, 400, "需要 user_id")
+		return
 	}
+	svc := services.NewSupportService(database.DB)
+	svc.MarkRead(me, c.Query("user_id"))
 	OK(c, gin.H{"ok": true})
 }
 
@@ -250,14 +190,8 @@ func SupportMarkRead(c *gin.Context) {
 // @Router /api/v1/support/unread [get]
 func SupportUnread(c *gin.Context) {
 	me := middleware.CurrentUser(c)
-	var count int64
-	if security.IsSupportStaff(me) {
-		database.DB.Model(&models.SupportMessage{}).
-			Where("is_from_user = ? AND is_read = ?", true, false).Count(&count)
-	} else {
-		database.DB.Model(&models.SupportMessage{}).
-			Where("user_id = ? AND is_from_user = ? AND is_read = ?", me.ID, false, false).Count(&count)
-	}
+	svc := services.NewSupportService(database.DB)
+	count, _ := svc.UnreadCount(me)
 	OK(c, gin.H{"count": count})
 }
 
@@ -274,48 +208,26 @@ func SupportConversations(c *gin.Context) {
 		Fail(c, http.StatusForbidden, 403, "无客服权限")
 		return
 	}
-	var userIDs []uint
-	database.DB.Model(&models.SupportMessage{}).Distinct("user_id").Pluck("user_id", &userIDs)
-	type conv struct {
-		UserID      uint      `json:"user_id"`
-		Username    string    `json:"username"`
-		LastMessage string    `json:"last_message"`
-		LastAt      time.Time `json:"last_at"`
-		UnreadCount int64     `json:"unread_count"`
+	svc := services.NewSupportService(database.DB)
+	convs, err := svc.ListConversations()
+	if err != nil {
+		Fail(c, http.StatusInternalServerError, 500, "查询失败")
+		return
 	}
-	out := make([]conv, 0)
-	for _, uid := range userIDs {
-		var user models.User
-		if database.DB.First(&user, uid).Error != nil {
-			continue
-		}
-		var last models.SupportMessage
-		database.DB.Where("user_id = ?", uid).Order("created_at desc").First(&last)
-		var unread int64
-		database.DB.Model(&models.SupportMessage{}).
-			Where("user_id = ? AND is_from_user = ? AND is_read = ?", uid, true, false).Count(&unread)
-		preview := last.Content
-		if last.AttachmentName != nil && *last.AttachmentName != "" {
-			preview = *last.AttachmentName
-		}
-		if len(preview) > 50 {
-			preview = preview[:50]
-		}
-		if last.AttachmentURL != nil && *last.AttachmentURL != "" && last.Content == "" {
-			preview = "[附件] " + preview
-		}
-		out = append(out, conv{
-			UserID: uid, Username: user.Username, LastMessage: preview,
-			LastAt: last.CreatedAt, UnreadCount: unread,
-		})
+	OK(c, convs)
+}
+
+// previewText 生成消息预览文本（最多 40 字），无文本时使用附件名。
+func previewText(content, attachmentName string) string {
+	preview := strings.TrimSpace(content)
+	if len(preview) > 40 {
+		preview = preview[:40]
 	}
-	// sort by last_at desc
-	for i := 0; i < len(out); i++ {
-		for j := i + 1; j < len(out); j++ {
-			if out[j].LastAt.After(out[i].LastAt) {
-				out[i], out[j] = out[j], out[i]
-			}
+	if preview == "" {
+		if attachmentName != "" {
+			return "[" + attachmentName + "]"
 		}
+		return "[附件]"
 	}
-	OK(c, out)
+	return preview
 }

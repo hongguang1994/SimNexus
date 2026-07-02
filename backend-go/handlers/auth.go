@@ -7,6 +7,7 @@ import (
 	"simnexus-go/middleware"
 	"simnexus-go/models"
 	"simnexus-go/security"
+	"simnexus-go/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,6 +54,8 @@ func Login(c *gin.Context) {
 		Fail(c, http.StatusBadRequest, 400, "请求格式错误")
 		return
 	}
+
+	// 验证码校验：token 和 code 必须同时传或同时不传
 	if req.CaptchaToken != "" && req.CaptchaCode != "" {
 		if !verifyCaptcha(req.CaptchaToken, req.CaptchaCode) {
 			Fail(c, http.StatusBadRequest, 400, "验证码错误")
@@ -63,11 +66,13 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// 委托 security 层加载用户并验证密码
 	user, err := security.LoadUserByUsername(database.DB, req.Username)
 	if err != nil || !security.VerifyPassword(req.Password, user.PasswordHash) {
 		Fail(c, http.StatusUnauthorized, 401, "用户名或密码错误")
 		return
 	}
+
 	token, err := security.CreateAccessToken(user.Username)
 	if err != nil {
 		Fail(c, http.StatusInternalServerError, 500, "令牌生成失败")
@@ -89,5 +94,12 @@ func Login(c *gin.Context) {
 // @Security BearerAuth
 // @Router /api/v1/auth/me [get]
 func GetMe(c *gin.Context) {
-	OK(c, userOut(middleware.CurrentUser(c)))
+	// 刷新用户数据（包含最新 RBAC 角色）后返回
+	svc := services.NewUserService(database.DB)
+	user, err := svc.GetUserByID(middleware.CurrentUser(c).ID)
+	if err != nil {
+		OK(c, userOut(middleware.CurrentUser(c)))
+		return
+	}
+	OK(c, userOut(user))
 }
