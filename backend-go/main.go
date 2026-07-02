@@ -15,6 +15,9 @@ import (
 	"net/http"
 	_ "net/http/pprof" // 注册 pprof 路由到 http.DefaultServeMux
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"simnexus-go/config"
 	"simnexus-go/database"
@@ -53,10 +56,32 @@ func main() {
 	r.Use(gin.Recovery())
 	router.Setup(r, cfg)
 
-	slog.Info("backend starting", "app", cfg.AppName, "addr", ":8000")
-	if err := r.Run("0.0.0.0:8000"); err != nil {
-		slog.Error("server exited", "err", err)
-		os.Exit(1)
+	srv := &http.Server{
+		Addr:    "0.0.0.0:8000",
+		Handler: r,
 	}
+
+	// 在独立 goroutine 中启动 HTTP 服务，主 goroutine 等待退出信号
+	go func() {
+		slog.Info("backend starting", "app", cfg.AppName, "addr", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server exited", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	// 监听系统信号：Ctrl+C（SIGINT）或 kill（SIGTERM）
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	// 收到信号后优雅关闭：最多等待 10 秒让进行中的请求完成
+	slog.Info("shutting down...")
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutCancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
+		slog.Error("forced shutdown", "err", err)
+	}
+	slog.Info("server stopped")
 
 }
