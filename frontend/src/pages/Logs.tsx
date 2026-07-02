@@ -33,7 +33,7 @@ export default function Logs() {
   useEffect(() => {
     if (!token) return
     const connect = () => {
-      const es = new EventSource(`/api/admin/logs/stream?token=${token}`)
+      const es = new EventSource(`/api/v1/admin/logs/stream?token=${token}`)
       esRef.current = es
       es.onopen = () => setConnected(true)
       es.onerror = () => {

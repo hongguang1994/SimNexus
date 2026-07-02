@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({ baseURL: '/api/v1' })
 
 api.interceptors.request.use((config) => {
   const raw = localStorage.getItem('simnexus-auth')
