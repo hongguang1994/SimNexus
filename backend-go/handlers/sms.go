@@ -45,7 +45,7 @@ type smsSendRequest struct {
 // @Accept json
 // @Produce json
 // @Param body body smsSendRequest true "发送参数"
-// @Success 200 {object} models.SmsMessage
+// @Success 200 {object} handlers.R{data=models.SmsMessage}
 // @Security BearerAuth
 // @Router /api/v1/sms/send [post]
 func SendSMS(c *gin.Context) {
@@ -132,7 +132,7 @@ func modemDisplayLabel(m *models.Modem) string {
 // @Param direction query string false "方向过滤(inbound/outbound)"
 // @Param skip query int false "偏移量"
 // @Param limit query int false "每页数量"
-// @Success 200 {array} models.SmsMessage
+// @Success 200 {object} handlers.R{data=[]models.SmsMessage}
 // @Security BearerAuth
 // @Router /api/v1/sms/messages [get]
 func ListMessages(c *gin.Context) {
@@ -175,7 +175,7 @@ func deleteFromModem(msg *models.SmsMessage) {
 // @Tags 短信
 // @Produce json
 // @Param id path int true "记录ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/messages/{id} [delete]
 func DeleteMessage(c *gin.Context) {
@@ -206,7 +206,7 @@ type batchDeleteBody struct {
 // @Accept json
 // @Produce json
 // @Param body body batchDeleteBody true "ID列表"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/messages/batch-delete [post]
 func BatchDeleteMessages(c *gin.Context) {
@@ -237,7 +237,7 @@ func BatchDeleteMessages(c *gin.Context) {
 // @Summary 获取短信模板列表
 // @Tags 短信
 // @Produce json
-// @Success 200 {array} models.SmsTemplate
+// @Success 200 {object} handlers.R{data=[]models.SmsTemplate}
 // @Security BearerAuth
 // @Router /api/v1/sms/templates [get]
 func ListTemplates(c *gin.Context) {
@@ -252,7 +252,7 @@ func ListTemplates(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body models.SmsTemplate true "模板内容"
-// @Success 200 {object} models.SmsTemplate
+// @Success 200 {object} handlers.R{data=models.SmsTemplate}
 // @Security BearerAuth
 // @Router /api/v1/sms/templates [post]
 func CreateTemplate(c *gin.Context) {
@@ -270,7 +270,7 @@ func CreateTemplate(c *gin.Context) {
 // @Tags 短信
 // @Produce json
 // @Param id path int true "模板ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/templates/{id} [delete]
 func DeleteTemplate(c *gin.Context) {
@@ -303,7 +303,7 @@ func taskToOut(t *models.SmsScheduledTask) gin.H {
 // @Summary 获取定时任务列表
 // @Tags 短信
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/tasks [get]
 func ListTasks(c *gin.Context) {
@@ -340,7 +340,7 @@ type taskCreate struct {
 // @Accept json
 // @Produce json
 // @Param body body taskCreate true "任务参数"
-// @Success 200 {object} models.SmsScheduledTask
+// @Success 200 {object} handlers.R{data=models.SmsScheduledTask}
 // @Security BearerAuth
 // @Router /api/v1/sms/tasks [post]
 func CreateTask(c *gin.Context) {
@@ -396,7 +396,7 @@ type taskUpdate struct {
 // @Produce json
 // @Param id path int true "任务ID"
 // @Param body body taskUpdate true "修改字段"
-// @Success 200 {object} models.SmsScheduledTask
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/tasks/{id} [patch]
 func UpdateTask(c *gin.Context) {
@@ -444,7 +444,7 @@ func UpdateTask(c *gin.Context) {
 // @Tags 短信
 // @Produce json
 // @Param id path int true "任务ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/tasks/{id} [delete]
 func DeleteTask(c *gin.Context) {
@@ -469,7 +469,7 @@ func DeleteTask(c *gin.Context) {
 // @Tags 短信
 // @Produce json
 // @Param id path int true "任务ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/tasks/{id}/run-now [post]
 func RunTaskNow(c *gin.Context) {
@@ -489,7 +489,7 @@ func RunTaskNow(c *gin.Context) {
 // @Produce json
 // @Param user_id query int false "按用户过滤"
 // @Param status query string false "按状态过滤"
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/admin/tasks [get]
 func AdminListTasks(c *gin.Context) {
@@ -516,7 +516,7 @@ func AdminListTasks(c *gin.Context) {
 // @Summary 获取任务统计数据
 // @Tags 短信
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sms/admin/tasks/stats [get]
 func AdminTaskStats(c *gin.Context) {
@@ -549,7 +549,7 @@ func AdminTaskStats(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID"
 // @Param limit query int false "返回条数"
-// @Success 200 {array} models.SmsMessage
+// @Success 200 {object} handlers.R{data=[]models.SmsMessage}
 // @Security BearerAuth
 // @Router /api/v1/sms/admin/tasks/{id}/history [get]
 func AdminTaskHistory(c *gin.Context) {

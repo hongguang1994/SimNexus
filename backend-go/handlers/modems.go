@@ -42,7 +42,7 @@ func visibleModemIDs(u *models.User) ([]uint, bool, bool) {
 // @Summary 获取所有设备（资源库）
 // @Tags 设备管理
 // @Produce json
-// @Success 200 {array} models.Modem
+// @Success 200 {object} handlers.R{data=[]models.Modem}
 // @Security BearerAuth
 // @Router /api/v1/modems/available [get]
 func ListAvailableModems(c *gin.Context) {
@@ -63,7 +63,7 @@ func ListAvailableModems(c *gin.Context) {
 // @Summary 获取用户有权限的设备列表
 // @Tags 设备管理
 // @Produce json
-// @Success 200 {array} models.Modem
+// @Success 200 {object} handlers.R{data=[]models.Modem}
 // @Security BearerAuth
 // @Router /api/v1/modems/ [get]
 func ListModems(c *gin.Context) {
@@ -105,7 +105,7 @@ func canAccessModem(u *models.User, modemID uint) bool {
 // @Tags 设备管理
 // @Produce json
 // @Param id path int true "设备ID"
-// @Success 200 {object} models.Modem
+// @Success 200 {object} handlers.R{data=models.Modem}
 // @Security BearerAuth
 // @Router /api/v1/modems/{id} [get]
 func GetModem(c *gin.Context) {
@@ -135,7 +135,7 @@ type modemUpdate struct {
 // @Produce json
 // @Param id path int true "设备ID"
 // @Param body body modemUpdate true "修改字段"
-// @Success 200 {object} models.Modem
+// @Success 200 {object} handlers.R{data=models.Modem}
 // @Security BearerAuth
 // @Router /api/v1/modems/{id} [patch]
 func UpdateModem(c *gin.Context) {
@@ -159,7 +159,7 @@ func UpdateModem(c *gin.Context) {
 // @Tags 设备管理
 // @Produce json
 // @Param id path int true "设备ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/modems/{id}/detail [get]
 func GetModemDetail(c *gin.Context) {
@@ -193,7 +193,7 @@ func GetModemDetail(c *gin.Context) {
 // @Tags 设备管理
 // @Produce json
 // @Param id path int true "设备ID"
-// @Success 200 {object} models.Modem
+// @Success 200 {object} handlers.R{data=models.Modem}
 // @Security BearerAuth
 // @Router /api/v1/modems/{id}/refresh [post]
 func RefreshModem(c *gin.Context) {

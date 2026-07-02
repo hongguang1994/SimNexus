@@ -20,7 +20,7 @@ import (
 // @Produce json
 // @Param skip query int false "偏移量"
 // @Param limit query int false "每页数量"
-// @Success 200 {array} models.TelegramMessage
+// @Success 200 {object} handlers.R{data=[]models.TelegramMessage}
 // @Security BearerAuth
 // @Router /api/v1/telegram/messages [get]
 func TelegramListMessages(c *gin.Context) {
@@ -42,7 +42,7 @@ type telegramSend struct {
 // @Accept json
 // @Produce json
 // @Param body body telegramSend true "消息内容"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/telegram/send [post]
 func TelegramSend(c *gin.Context) {
@@ -74,7 +74,7 @@ func TelegramSend(c *gin.Context) {
 // @Produce json
 // @Param file formData file true "文件"
 // @Param caption formData string false "说明文字"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/telegram/send-file [post]
 func TelegramSendFile(c *gin.Context) {
@@ -118,7 +118,7 @@ func TelegramSendFile(c *gin.Context) {
 // @Summary 清空Telegram消息记录
 // @Tags Telegram
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/telegram/messages [delete]
 func TelegramClearMessages(c *gin.Context) {
@@ -170,7 +170,7 @@ func TelegramProxyFile(c *gin.Context) {
 // @Summary 获取Bot配置状态
 // @Tags Telegram
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/telegram/config [get]
 func TelegramConfig(c *gin.Context) {

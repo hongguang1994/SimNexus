@@ -28,7 +28,7 @@ type roleBody struct {
 // @Summary 获取角色列表
 // @Tags 角色管理
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R{data=[]models.Role}
 // @Security BearerAuth
 // @Router /api/v1/roles/ [get]
 func ListRoles(c *gin.Context) {
@@ -60,7 +60,7 @@ func applyModemScope(role *models.Role, ids *[]uint) {
 // @Accept json
 // @Produce json
 // @Param body body roleBody true "角色信息"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R{data=models.Role}
 // @Security BearerAuth
 // @Router /api/v1/roles/ [post]
 func CreateRole(c *gin.Context) {
@@ -95,7 +95,7 @@ func CreateRole(c *gin.Context) {
 // @Produce json
 // @Param id path int true "角色ID"
 // @Param body body roleBody true "修改字段"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R{data=models.Role}
 // @Security BearerAuth
 // @Router /api/v1/roles/{id} [patch]
 func UpdateRole(c *gin.Context) {
@@ -143,7 +143,7 @@ func UpdateRole(c *gin.Context) {
 // @Tags 角色管理
 // @Produce json
 // @Param id path int true "角色ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/roles/{id} [delete]
 func DeleteRole(c *gin.Context) {
@@ -172,7 +172,7 @@ type setRolesBody struct {
 // @Produce json
 // @Param id path int true "用户ID"
 // @Param body body setRolesBody true "角色ID列表"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/roles/users/{id}/roles [put]
 func SetUserRoles(c *gin.Context) {

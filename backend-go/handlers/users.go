@@ -17,7 +17,7 @@ import (
 // @Summary 获取用户列表
 // @Tags 用户管理
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/users/ [get]
 func ListUsers(c *gin.Context) {
@@ -42,7 +42,7 @@ type userCreate struct {
 // @Accept json
 // @Produce json
 // @Param body body userCreate true "用户信息"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/users/ [post]
 func CreateUser(c *gin.Context) {
@@ -83,7 +83,7 @@ type userUpdate struct {
 // @Produce json
 // @Param id path int true "用户ID"
 // @Param body body userUpdate true "修改字段"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/users/{id} [patch]
 func UpdateUser(c *gin.Context) {
@@ -110,7 +110,7 @@ func UpdateUser(c *gin.Context) {
 // @Tags 用户管理
 // @Produce json
 // @Param id path int true "用户ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/users/{id} [delete]
 func DeleteUser(c *gin.Context) {
@@ -140,7 +140,7 @@ type passwordReset struct {
 // @Produce json
 // @Param id path int true "用户ID"
 // @Param body body passwordReset true "新密码"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/users/{id}/reset-password [post]
 func ResetPassword(c *gin.Context) {
@@ -172,7 +172,7 @@ type passwordChange struct {
 // @Accept json
 // @Produce json
 // @Param body body passwordChange true "旧密码和新密码"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/users/me/change-password [post]
 func ChangePassword(c *gin.Context) {

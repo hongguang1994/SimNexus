@@ -25,7 +25,7 @@ var captchaPalettes = [][3]int{
 // @Description 返回 SVG 验证码图片和 JWT 签名答案 token
 // @Tags 认证
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Router /api/v1/auth/captcha [get]
 func GetCaptcha(c *gin.Context) {
 	code := make([]byte, 4)

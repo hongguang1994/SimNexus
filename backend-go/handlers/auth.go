@@ -43,7 +43,7 @@ func userOut(u *models.User) gin.H {
 // @Accept json
 // @Produce json
 // @Param body body loginRequest true "登录信息"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Router /api/v1/auth/login [post]
@@ -85,7 +85,7 @@ func Login(c *gin.Context) {
 // @Description 返回当前登录用户及其 RBAC 角色
 // @Tags 认证
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/auth/me [get]
 func GetMe(c *gin.Context) {

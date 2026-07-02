@@ -49,7 +49,7 @@ func supportMsgOut(m *models.SupportMessage) gin.H {
 // @Accept multipart/form-data
 // @Produce json
 // @Param file formData file true "附件"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/support/upload [post]
 func SupportUpload(c *gin.Context) {
@@ -122,7 +122,7 @@ func strPtr(s string) *string {
 // @Accept json
 // @Produce json
 // @Param body body messageIn true "消息内容"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/support/messages [post]
 func SupportSendMessage(c *gin.Context) {
@@ -186,7 +186,7 @@ func SupportSendMessage(c *gin.Context) {
 // @Produce json
 // @Param user_id query int false "用户ID（客服用）"
 // @Param since_id query int false "增量拉取起始ID"
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R{data=[]models.SupportMessage}
 // @Security BearerAuth
 // @Router /api/v1/support/messages [get]
 func SupportGetMessages(c *gin.Context) {
@@ -219,7 +219,7 @@ func SupportGetMessages(c *gin.Context) {
 // @Tags 客服
 // @Produce json
 // @Param user_id query int false "用户ID（客服用）"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/support/messages/read [post]
 func SupportMarkRead(c *gin.Context) {
@@ -245,7 +245,7 @@ func SupportMarkRead(c *gin.Context) {
 // @Summary 获取未读消息数量
 // @Tags 客服
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/support/unread [get]
 func SupportUnread(c *gin.Context) {
@@ -265,7 +265,7 @@ func SupportUnread(c *gin.Context) {
 // @Summary 获取所有会话列表（客服）
 // @Tags 客服
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/support/conversations [get]
 func SupportConversations(c *gin.Context) {

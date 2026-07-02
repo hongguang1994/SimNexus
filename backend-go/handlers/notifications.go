@@ -31,7 +31,7 @@ func visibleNotificationFilter(me *models.User, q *gorm.DB) *gorm.DB {
 // @Tags 通知
 // @Produce json
 // @Param limit query int false "每页数量"
-// @Success 200 {array} models.Notification
+// @Success 200 {object} handlers.R{data=[]models.Notification}
 // @Security BearerAuth
 // @Router /api/v1/notifications [get]
 func ListNotifications(c *gin.Context) {
@@ -50,7 +50,7 @@ func ListNotifications(c *gin.Context) {
 // @Summary 获取未读通知数量
 // @Tags 通知
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/notifications/unread-count [get]
 func UnreadCount(c *gin.Context) {
@@ -65,7 +65,7 @@ func UnreadCount(c *gin.Context) {
 // @Summary 一键标记所有通知为已读
 // @Tags 通知
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/notifications/read-all [post]
 func MarkAllRead(c *gin.Context) {
@@ -80,7 +80,7 @@ func MarkAllRead(c *gin.Context) {
 // @Tags 通知
 // @Produce json
 // @Param id path int true "通知ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/notifications/{id}/read [post]
 func MarkOneRead(c *gin.Context) {

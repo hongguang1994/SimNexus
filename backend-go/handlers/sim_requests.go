@@ -144,7 +144,7 @@ type requestCreate struct {
 // @Accept json
 // @Produce json
 // @Param body body requestCreate true "申请信息"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R{data=models.SimAccessRequest}
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/ [post]
 func CreateSimRequest(c *gin.Context) {
@@ -189,7 +189,7 @@ func CreateSimRequest(c *gin.Context) {
 // @Summary 获取我的申请记录
 // @Tags SIM申请
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R{data=[]models.SimAccessRequest}
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/my [get]
 func MyRequests(c *gin.Context) {
@@ -213,7 +213,7 @@ func MyRequests(c *gin.Context) {
 // @Summary 获取我的已授权列表
 // @Tags SIM申请
 // @Produce json
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R{data=[]models.SimAccessRequest}
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/my-grants [get]
 func MyGrants(c *gin.Context) {
@@ -244,7 +244,7 @@ func MyGrants(c *gin.Context) {
 // @Tags SIM申请
 // @Produce json
 // @Param status query string false "状态过滤"
-// @Success 200 {array} map[string]interface{}
+// @Success 200 {object} handlers.R{data=[]models.SimAccessRequest}
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/ [get]
 func ListRequests(c *gin.Context) {
@@ -294,7 +294,7 @@ type approveBody struct {
 // @Produce json
 // @Param id path int true "申请ID"
 // @Param body body approveBody true "批准信息"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/{id}/approve [put]
 func ApproveRequest(c *gin.Context) {
@@ -339,7 +339,7 @@ type rejectBody struct {
 // @Produce json
 // @Param id path int true "申请ID"
 // @Param body body rejectBody true "拒绝原因"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/{id}/reject [put]
 func RejectRequest(c *gin.Context) {
@@ -382,7 +382,7 @@ type batchApproveBody struct {
 // @Accept json
 // @Produce json
 // @Param body body batchApproveBody true "批量审批参数"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/batch-approve [post]
 func BatchApprove(c *gin.Context) {
@@ -430,7 +430,7 @@ type directGrantBody struct {
 // @Accept json
 // @Produce json
 // @Param body body directGrantBody true "授权信息"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/grant [post]
 func DirectGrant(c *gin.Context) {
@@ -469,7 +469,7 @@ func DirectGrant(c *gin.Context) {
 // @Tags SIM申请
 // @Produce json
 // @Param id path int true "授权ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} handlers.R
 // @Security BearerAuth
 // @Router /api/v1/sim-requests/grants/{id} [delete]
 func RevokeGrant(c *gin.Context) {
