@@ -38,7 +38,13 @@ func visibleModemIDs(u *models.User) ([]uint, bool, bool) {
 	return granted, false, true
 }
 
-// ListAvailableModems returns all active modems for browsing.
+// ListAvailableModems godoc
+// @Summary 获取所有设备（资源库）
+// @Tags 设备管理
+// @Produce json
+// @Success 200 {array} models.Modem
+// @Security BearerAuth
+// @Router /api/v1/modems/available [get]
 func ListAvailableModems(c *gin.Context) {
 	u := middleware.CurrentUser(c)
 	if !u.IsAdmin() {
@@ -53,7 +59,13 @@ func ListAvailableModems(c *gin.Context) {
 	c.JSON(http.StatusOK, modems)
 }
 
-// ListModems returns modems visible to the user.
+// ListModems godoc
+// @Summary 获取用户有权限的设备列表
+// @Tags 设备管理
+// @Produce json
+// @Success 200 {array} models.Modem
+// @Security BearerAuth
+// @Router /api/v1/modems/ [get]
 func ListModems(c *gin.Context) {
 	u := middleware.CurrentUser(c)
 	if u.IsAdmin() {
@@ -88,7 +100,14 @@ func canAccessModem(u *models.User, modemID uint) bool {
 	return security.ContainsUint(ids, modemID)
 }
 
-// GetModem returns a single modem.
+// GetModem godoc
+// @Summary 获取单个设备信息
+// @Tags 设备管理
+// @Produce json
+// @Param id path int true "设备ID"
+// @Success 200 {object} models.Modem
+// @Security BearerAuth
+// @Router /api/v1/modems/{id} [get]
 func GetModem(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	u := middleware.CurrentUser(c)
@@ -109,7 +128,16 @@ type modemUpdate struct {
 	Alias *string `json:"alias"`
 }
 
-// UpdateModem sets the modem alias.
+// UpdateModem godoc
+// @Summary 修改设备属性
+// @Tags 设备管理
+// @Accept json
+// @Produce json
+// @Param id path int true "设备ID"
+// @Param body body modemUpdate true "修改字段"
+// @Success 200 {object} models.Modem
+// @Security BearerAuth
+// @Router /api/v1/modems/{id} [patch]
 func UpdateModem(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var modem models.Modem
@@ -126,7 +154,14 @@ func UpdateModem(c *gin.Context) {
 	c.JSON(http.StatusOK, modem)
 }
 
-// GetModemDetail returns a modem plus SMS stats.
+// GetModemDetail godoc
+// @Summary 获取设备详情（含短信统计）
+// @Tags 设备管理
+// @Produce json
+// @Param id path int true "设备ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/modems/{id}/detail [get]
 func GetModemDetail(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	u := middleware.CurrentUser(c)
@@ -153,7 +188,14 @@ func GetModemDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// RefreshModem re-reads modem info from the device.
+// RefreshModem godoc
+// @Summary 手动刷新设备状态
+// @Tags 设备管理
+// @Produce json
+// @Param id path int true "设备ID"
+// @Success 200 {object} models.Modem
+// @Security BearerAuth
+// @Router /api/v1/modems/{id}/refresh [post]
 func RefreshModem(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var modem models.Modem

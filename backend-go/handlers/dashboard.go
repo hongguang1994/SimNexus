@@ -10,7 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DashboardStats returns SMS trend, month stats, and task counts.
+// DashboardStats godoc
+// @Summary 获取仪表盘统计数据
+// @Tags 仪表盘
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/dashboard/stats [get]
 func DashboardStats(c *gin.Context) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	sevenDaysAgo := today.AddDate(0, 0, -6)

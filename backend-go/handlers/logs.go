@@ -11,7 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// LogsSSE streams log entries via Server-Sent Events (admin only).
+// LogsSSE godoc
+// @Summary 实时日志SSE流（仅管理员）
+// @Tags 系统
+// @Produce text/event-stream
+// @Success 200 {string} string "SSE流"
+// @Security BearerAuth
+// @Router /api/v1/admin/logs/stream [get]
 func LogsSSE(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil || !user.IsAdmin() {

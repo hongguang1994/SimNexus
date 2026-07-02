@@ -13,7 +13,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ListUsers returns all users (admin).
+// ListUsers godoc
+// @Summary 获取用户列表
+// @Tags 用户管理
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/users/ [get]
 func ListUsers(c *gin.Context) {
 	var users []models.User
 	database.DB.Preload("RbacRoles").Order("id").Find(&users)
@@ -30,7 +36,15 @@ type userCreate struct {
 	Role     string `json:"role"`
 }
 
-// CreateUser creates a user (admin).
+// CreateUser godoc
+// @Summary 创建用户
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param body body userCreate true "用户信息"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/users/ [post]
 func CreateUser(c *gin.Context) {
 	var data userCreate
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -62,7 +76,16 @@ type userUpdate struct {
 	IsActive *bool   `json:"is_active"`
 }
 
-// UpdateUser patches a user's role/active state (admin).
+// UpdateUser godoc
+// @Summary 修改用户信息
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Param body body userUpdate true "修改字段"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/users/{id} [patch]
 func UpdateUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var user models.User
@@ -82,7 +105,14 @@ func UpdateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, userOut(&user))
 }
 
-// DeleteUser removes a user (admin, not self).
+// DeleteUser godoc
+// @Summary 删除用户
+// @Tags 用户管理
+// @Produce json
+// @Param id path int true "用户ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/users/{id} [delete]
 func DeleteUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	me := middleware.CurrentUser(c)
@@ -103,7 +133,16 @@ type passwordReset struct {
 	NewPassword string `json:"new_password"`
 }
 
-// ResetPassword sets a new password for a user (admin).
+// ResetPassword godoc
+// @Summary 管理员重置用户密码
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Param body body passwordReset true "新密码"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/users/{id}/reset-password [post]
 func ResetPassword(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var user models.User
@@ -127,7 +166,15 @@ type passwordChange struct {
 	NewPassword string `json:"new_password"`
 }
 
-// ChangePassword updates the current user's password.
+// ChangePassword godoc
+// @Summary 修改当前用户密码
+// @Tags 用户管理
+// @Accept json
+// @Produce json
+// @Param body body passwordChange true "旧密码和新密码"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/users/me/change-password [post]
 func ChangePassword(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var data passwordChange

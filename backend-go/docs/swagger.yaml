@@ -1,0 +1,1772 @@
+basePath: /
+definitions:
+  handlers.approveBody:
+    properties:
+      admin_note:
+        type: string
+      expires_at:
+        type: string
+      granted_level:
+        type: string
+    type: object
+  handlers.batchApproveBody:
+    properties:
+      admin_note:
+        type: string
+      expires_at:
+        type: string
+      granted_level:
+        type: string
+      ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  handlers.batchDeleteBody:
+    properties:
+      ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  handlers.directGrantBody:
+    properties:
+      admin_note:
+        type: string
+      expires_at:
+        type: string
+      granted_level:
+        type: string
+      modem_id:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  handlers.loginRequest:
+    properties:
+      captcha_code:
+        description: 用户输入的验证码答案
+        type: string
+      captcha_token:
+        description: 验证码 JWT（与 captcha_code 配对）
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  handlers.messageIn:
+    properties:
+      attachment_name:
+        type: string
+      attachment_type:
+        type: string
+      attachment_url:
+        type: string
+      content:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  handlers.modemUpdate:
+    properties:
+      alias:
+        type: string
+    type: object
+  handlers.passwordChange:
+    properties:
+      new_password:
+        type: string
+      old_password:
+        type: string
+    type: object
+  handlers.passwordReset:
+    properties:
+      new_password:
+        type: string
+    type: object
+  handlers.rejectBody:
+    properties:
+      admin_note:
+        type: string
+    type: object
+  handlers.requestCreate:
+    properties:
+      modem_id:
+        type: integer
+      reason:
+        type: string
+      requested_level:
+        type: string
+    type: object
+  handlers.roleBody:
+    properties:
+      allowed_modem_ids:
+        description: nil=不修改，[]uint{}=清除限制
+        items:
+          type: integer
+        type: array
+      can_approve_requests:
+        type: boolean
+      can_support:
+        type: boolean
+      can_view_history:
+        type: boolean
+      can_view_sim:
+        type: boolean
+      description:
+        type: string
+      name:
+        type: string
+      read_only:
+        type: boolean
+    type: object
+  handlers.setRolesBody:
+    properties:
+      role_ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  handlers.smsSendRequest:
+    properties:
+      content:
+        type: string
+      modem_id:
+        type: integer
+      phone_number:
+        type: string
+    type: object
+  handlers.taskCreate:
+    properties:
+      content:
+        type: string
+      cron_expression:
+        type: string
+      modem_id:
+        type: integer
+      name:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      send_once_at:
+        type: string
+    type: object
+  handlers.taskUpdate:
+    properties:
+      content:
+        type: string
+      cron_expression:
+        type: string
+      name:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      send_once_at:
+        type: string
+      status:
+        type: string
+    type: object
+  handlers.telegramSend:
+    properties:
+      chat_id:
+        type: string
+      text:
+        type: string
+    type: object
+  handlers.userCreate:
+    properties:
+      password:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+  handlers.userUpdate:
+    properties:
+      is_active:
+        type: boolean
+      role:
+        type: string
+    type: object
+  models.Modem:
+    properties:
+      access_technologies:
+        description: 接入技术，如 lte
+        type: string
+      alias:
+        description: 用户自定义别名
+        type: string
+      connection_duration:
+        description: 秒
+        type: integer
+      created_at:
+        type: string
+      current_bands:
+        type: string
+      current_modes:
+        type: string
+      device_path:
+        description: 设备节点，如 ttyUSB0
+        type: string
+      firmware_revision:
+        type: string
+      hardware_revision:
+        type: string
+      iccid:
+        type: string
+      id:
+        type: integer
+      imei:
+        description: IMEI，可能为空
+        type: string
+      imsi:
+        type: string
+      is_active:
+        description: false 表示设备已拔出
+        type: boolean
+      last_seen:
+        type: string
+      manufacturer:
+        type: string
+      mm_object_path:
+        description: 唯一键
+        type: string
+      model:
+        type: string
+      operator:
+        description: 运营商名称
+        type: string
+      phone_number:
+        type: string
+      plugin:
+        description: mmcli 插件名
+        type: string
+      ports:
+        type: string
+      registration_state:
+        type: string
+      rx_bytes:
+        type: integer
+      signal_quality:
+        description: 信号质量 0-100
+        type: integer
+      sim_operator_code:
+        description: MCC+MNC
+        type: string
+      sim_operator_name:
+        description: SIM 卡归属运营商名
+        type: string
+      status:
+        type: string
+      tx_bytes:
+        type: integer
+    type: object
+  models.Notification:
+    properties:
+      audience:
+        description: 受众：admin/support/all/user
+        type: string
+      body:
+        description: 通知正文
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_read:
+        type: boolean
+      target_user_id:
+        description: audience=user 时指定目标用户
+        type: integer
+      title:
+        type: string
+      type:
+        description: 通知类型，如 sms_failed
+        type: string
+    type: object
+  models.SmsMessage:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      created_by_id:
+        description: 发送人
+        type: integer
+      direction:
+        description: inbound/outbound
+        type: string
+      error_message:
+        description: 发送失败原因
+        type: string
+      id:
+        type: integer
+      mm_sms_index:
+        description: mmcli SMS 对象索引，用于去重
+        type: string
+      modem_id:
+        type: integer
+      phone_number:
+        description: 对端号码
+        type: string
+      received_at:
+        type: string
+      scheduled_task_id:
+        description: 关联的定时任务（手动发送时为 nil）
+        type: integer
+      sent_at:
+        type: string
+      status:
+        type: string
+    type: object
+  models.SmsScheduledTask:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      created_by_id:
+        type: integer
+      cron_expression:
+        description: 与 SendOnceAt 二选一
+        type: string
+      id:
+        type: integer
+      last_run_at:
+        type: string
+      modem_id:
+        type: integer
+      name:
+        type: string
+      next_run_at:
+        type: string
+      recipients:
+        description: 收件人号码列表
+        items:
+          type: string
+        type: array
+      run_count:
+        type: integer
+      send_once_at:
+        description: 一次性发送时间（UTC）
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  models.SmsTemplate:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      updated_at:
+        type: string
+      variables:
+        description: 变量名列表，如 ["姓名", "金额"]
+        items:
+          type: string
+        type: array
+    type: object
+  models.TelegramMessage:
+    properties:
+      chat_id:
+        type: string
+      created_at:
+        type: string
+      direction:
+        description: in / out
+        type: string
+      file_id:
+        description: Telegram 文件 ID
+        type: string
+      file_type:
+        description: photo/document/video 等
+        type: string
+      id:
+        type: integer
+      is_command:
+        description: 是否为 Bot 命令
+        type: boolean
+      text:
+        type: string
+      username:
+        description: 发送人用户名（收件时有效）
+        type: string
+    type: object
+host: localhost:8000
+info:
+  contact: {}
+  description: 多USB 4G Modem 管理系统 API
+  title: SimNexus API
+  version: "1.0"
+paths:
+  /api/v1/admin/logs/stream:
+    get:
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE流
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 实时日志SSE流（仅管理员）
+      tags:
+      - 系统
+  /api/v1/auth/captcha:
+    get:
+      description: 返回 SVG 验证码图片和 JWT 签名答案 token
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取图形验证码
+      tags:
+      - 认证
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 验证用户名/密码（可选验证码），返回 JWT
+      parameters:
+      - description: 登录信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户登录
+      tags:
+      - 认证
+  /api/v1/auth/me:
+    get:
+      description: 返回当前登录用户及其 RBAC 角色
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取当前用户信息
+      tags:
+      - 认证
+  /api/v1/dashboard/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取仪表盘统计数据
+      tags:
+      - 仪表盘
+  /api/v1/modems/:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Modem'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取用户有权限的设备列表
+      tags:
+      - 设备管理
+  /api/v1/modems/{id}:
+    get:
+      parameters:
+      - description: 设备ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Modem'
+      security:
+      - BearerAuth: []
+      summary: 获取单个设备信息
+      tags:
+      - 设备管理
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 设备ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.modemUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Modem'
+      security:
+      - BearerAuth: []
+      summary: 修改设备属性
+      tags:
+      - 设备管理
+  /api/v1/modems/{id}/detail:
+    get:
+      parameters:
+      - description: 设备ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取设备详情（含短信统计）
+      tags:
+      - 设备管理
+  /api/v1/modems/{id}/refresh:
+    post:
+      parameters:
+      - description: 设备ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Modem'
+      security:
+      - BearerAuth: []
+      summary: 手动刷新设备状态
+      tags:
+      - 设备管理
+  /api/v1/modems/available:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Modem'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取所有设备（资源库）
+      tags:
+      - 设备管理
+  /api/v1/notifications:
+    get:
+      parameters:
+      - description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Notification'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取通知列表
+      tags:
+      - 通知
+  /api/v1/notifications/{id}/read:
+    post:
+      parameters:
+      - description: 通知ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 标记单条通知为已读
+      tags:
+      - 通知
+  /api/v1/notifications/read-all:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 一键标记所有通知为已读
+      tags:
+      - 通知
+  /api/v1/notifications/unread-count:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取未读通知数量
+      tags:
+      - 通知
+  /api/v1/roles/:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取角色列表
+      tags:
+      - 角色管理
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.roleBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建角色
+      tags:
+      - 角色管理
+  /api/v1/roles/{id}:
+    delete:
+      parameters:
+      - description: 角色ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除角色
+      tags:
+      - 角色管理
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 角色ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.roleBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 修改角色
+      tags:
+      - 角色管理
+  /api/v1/roles/users/{id}/roles:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 角色ID列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.setRolesBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 设置用户角色
+      tags:
+      - 角色管理
+  /api/v1/sim-requests/:
+    get:
+      parameters:
+      - description: 状态过滤
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 审批员查看申请列表
+      tags:
+      - SIM申请
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 申请信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.requestCreate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 申请SIM卡访问权限
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/{id}/approve:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 申请ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 批准信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.approveBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批准申请
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/{id}/reject:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 申请ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 拒绝原因
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.rejectBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 拒绝申请
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/batch-approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 批量审批参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.batchApproveBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量审批通过
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/grant:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 授权信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.directGrantBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 直接授权（无需申请）
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/grants/{id}:
+    delete:
+      parameters:
+      - description: 授权ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 撤销授权
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/my:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取我的申请记录
+      tags:
+      - SIM申请
+  /api/v1/sim-requests/my-grants:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取我的已授权列表
+      tags:
+      - SIM申请
+  /api/v1/sms/admin/tasks:
+    get:
+      parameters:
+      - description: 按用户过滤
+        in: query
+        name: user_id
+        type: integer
+      - description: 按状态过滤
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 管理员查看所有任务
+      tags:
+      - 短信
+  /api/v1/sms/admin/tasks/{id}/history:
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 返回条数
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.SmsMessage'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取任务执行历史
+      tags:
+      - 短信
+  /api/v1/sms/admin/tasks/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取任务统计数据
+      tags:
+      - 短信
+  /api/v1/sms/messages:
+    get:
+      parameters:
+      - description: 设备ID过滤
+        in: query
+        name: modem_id
+        type: integer
+      - description: 方向过滤(inbound/outbound)
+        in: query
+        name: direction
+        type: string
+      - description: 偏移量
+        in: query
+        name: skip
+        type: integer
+      - description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.SmsMessage'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取短信记录
+      tags:
+      - 短信
+  /api/v1/sms/messages/{id}:
+    delete:
+      parameters:
+      - description: 记录ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除单条短信记录
+      tags:
+      - 短信
+  /api/v1/sms/messages/batch-delete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.batchDeleteBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量删除短信记录
+      tags:
+      - 短信
+  /api/v1/sms/send:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 发送参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.smsSendRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.SmsMessage'
+      security:
+      - BearerAuth: []
+      summary: 立即发送短信
+      tags:
+      - 短信
+  /api/v1/sms/tasks:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取定时任务列表
+      tags:
+      - 短信
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.taskCreate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.SmsScheduledTask'
+      security:
+      - BearerAuth: []
+      summary: 创建定时任务
+      tags:
+      - 短信
+  /api/v1/sms/tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除定时任务
+      tags:
+      - 短信
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.taskUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.SmsScheduledTask'
+      security:
+      - BearerAuth: []
+      summary: 修改定时任务
+      tags:
+      - 短信
+  /api/v1/sms/tasks/{id}/run-now:
+    post:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 立即执行定时任务
+      tags:
+      - 短信
+  /api/v1/sms/templates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.SmsTemplate'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取短信模板列表
+      tags:
+      - 短信
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 模板内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.SmsTemplate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.SmsTemplate'
+      security:
+      - BearerAuth: []
+      summary: 创建短信模板
+      tags:
+      - 短信
+  /api/v1/sms/templates/{id}:
+    delete:
+      parameters:
+      - description: 模板ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除短信模板
+      tags:
+      - 短信
+  /api/v1/support/conversations:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取所有会话列表（客服）
+      tags:
+      - 客服
+  /api/v1/support/files/{filename}:
+    get:
+      parameters:
+      - description: 文件名
+        in: path
+        name: filename
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 下载客服附件
+      tags:
+      - 客服
+  /api/v1/support/messages:
+    get:
+      parameters:
+      - description: 用户ID（客服用）
+        in: query
+        name: user_id
+        type: integer
+      - description: 增量拉取起始ID
+        in: query
+        name: since_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取客服消息记录
+      tags:
+      - 客服
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 消息内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.messageIn'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 发送客服消息
+      tags:
+      - 客服
+  /api/v1/support/messages/read:
+    post:
+      parameters:
+      - description: 用户ID（客服用）
+        in: query
+        name: user_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 标记消息已读
+      tags:
+      - 客服
+  /api/v1/support/unread:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取未读消息数量
+      tags:
+      - 客服
+  /api/v1/support/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 附件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 上传客服附件
+      tags:
+      - 客服
+  /api/v1/telegram/config:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取Bot配置状态
+      tags:
+      - Telegram
+  /api/v1/telegram/file/{file_id}:
+    get:
+      parameters:
+      - description: Telegram file_id
+        in: path
+        name: file_id
+        required: true
+        type: string
+      - description: JWT令牌
+        in: query
+        name: token
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 代理下载Telegram文件
+      tags:
+      - Telegram
+  /api/v1/telegram/messages:
+    delete:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 清空Telegram消息记录
+      tags:
+      - Telegram
+    get:
+      parameters:
+      - description: 偏移量
+        in: query
+        name: skip
+        type: integer
+      - description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.TelegramMessage'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取Telegram消息记录
+      tags:
+      - Telegram
+  /api/v1/telegram/send:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 消息内容
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.telegramSend'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 发送Telegram文字消息
+      tags:
+      - Telegram
+  /api/v1/telegram/send-file:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: 说明文字
+        in: formData
+        name: caption
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 向Telegram发送图片或文件
+      tags:
+      - Telegram
+  /api/v1/users/:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取用户列表
+      tags:
+      - 用户管理
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.userCreate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建用户
+      tags:
+      - 用户管理
+  /api/v1/users/{id}:
+    delete:
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除用户
+      tags:
+      - 用户管理
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修改字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.userUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 修改用户信息
+      tags:
+      - 用户管理
+  /api/v1/users/{id}/reset-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 新密码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.passwordReset'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 管理员重置用户密码
+      tags:
+      - 用户管理
+  /api/v1/users/me/change-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 旧密码和新密码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.passwordChange'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 修改当前用户密码
+      tags:
+      - 用户管理
+securityDefinitions:
+  BearerAuth:
+    description: '格式: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

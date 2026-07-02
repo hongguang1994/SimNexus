@@ -21,7 +21,13 @@ var captchaPalettes = [][3]int{
 	{234, 88, 12}, {15, 118, 110}, {190, 18, 60}, {79, 70, 229},
 }
 
-// GetCaptcha returns a signed captcha token and its SVG image.
+// GetCaptcha godoc
+// @Summary 获取图形验证码
+// @Description 返回 SVG 验证码图片和 JWT 签名答案 token
+// @Tags 认证
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/auth/captcha [get]
 func GetCaptcha(c *gin.Context) {
 	code := make([]byte, 4)
 	for i := range code {

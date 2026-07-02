@@ -36,7 +36,17 @@ func userOut(u *models.User) gin.H {
 	}
 }
 
-// Login authenticates a user and returns a JWT.
+// Login godoc
+// @Summary 用户登录
+// @Description 验证用户名/密码（可选验证码），返回 JWT
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body loginRequest true "登录信息"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /api/v1/auth/login [post]
 func Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -70,7 +80,14 @@ func Login(c *gin.Context) {
 	})
 }
 
-// GetMe returns the current authenticated user.
+// GetMe godoc
+// @Summary 获取当前用户信息
+// @Description 返回当前登录用户及其 RBAC 角色
+// @Tags 认证
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/auth/me [get]
 func GetMe(c *gin.Context) {
 	c.JSON(http.StatusOK, userOut(middleware.CurrentUser(c)))
 }

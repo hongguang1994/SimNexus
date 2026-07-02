@@ -24,7 +24,13 @@ type roleBody struct {
 	rawHasScope bool
 }
 
-// ListRoles returns all roles (admin).
+// ListRoles godoc
+// @Summary 获取角色列表
+// @Tags 角色管理
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/roles/ [get]
 func ListRoles(c *gin.Context) {
 	var roles []models.Role
 	database.DB.Preload("ModemScope").Order("id").Find(&roles)
@@ -48,7 +54,15 @@ func applyModemScope(role *models.Role, ids *[]uint) {
 	role.ModemScope = modems
 }
 
-// CreateRole creates a role (admin).
+// CreateRole godoc
+// @Summary 创建角色
+// @Tags 角色管理
+// @Accept json
+// @Produce json
+// @Param body body roleBody true "角色信息"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/roles/ [post]
 func CreateRole(c *gin.Context) {
 	var raw map[string]interface{}
 	c.ShouldBindJSON(&raw)
@@ -74,7 +88,16 @@ func CreateRole(c *gin.Context) {
 	c.JSON(http.StatusOK, models.RoleOut(role))
 }
 
-// UpdateRole patches a role (admin).
+// UpdateRole godoc
+// @Summary 修改角色
+// @Tags 角色管理
+// @Accept json
+// @Produce json
+// @Param id path int true "角色ID"
+// @Param body body roleBody true "修改字段"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/roles/{id} [patch]
 func UpdateRole(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var role models.Role
@@ -115,7 +138,14 @@ func UpdateRole(c *gin.Context) {
 	c.JSON(http.StatusOK, models.RoleOut(role))
 }
 
-// DeleteRole removes a non-system role (admin).
+// DeleteRole godoc
+// @Summary 删除角色
+// @Tags 角色管理
+// @Produce json
+// @Param id path int true "角色ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/roles/{id} [delete]
 func DeleteRole(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var role models.Role
@@ -135,7 +165,16 @@ type setRolesBody struct {
 	RoleIDs []uint `json:"role_ids"`
 }
 
-// SetUserRoles replaces a user's RBAC roles (admin).
+// SetUserRoles godoc
+// @Summary 设置用户角色
+// @Tags 角色管理
+// @Accept json
+// @Produce json
+// @Param id path int true "用户ID"
+// @Param body body setRolesBody true "角色ID列表"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/roles/users/{id}/roles [put]
 func SetUserRoles(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var user models.User

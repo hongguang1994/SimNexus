@@ -1,17 +1,31 @@
+// @title SimNexus API
+// @version 1.0
+// @description 多USB 4G Modem 管理系统 API
+// @host localhost:8000
+// @BasePath /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description 格式: Bearer {token}
 package main
 
 import (
 	"context"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof" // 注册 pprof 路由到 http.DefaultServeMux
 	"os"
 
 	"simnexus-go/config"
 	"simnexus-go/database"
+	_ "simnexus-go/docs"
 	"simnexus-go/handlers"
 	"simnexus-go/middleware"
 	"simnexus-go/services"
 
 	"github.com/gin-gonic/gin"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	swaggerFiles "github.com/swaggo/files"
 )
 
 // main 是程序入口：初始化日志缓冲、配置、数据库，启动后台服务，注册路由，监听 :8000。
@@ -22,6 +36,14 @@ func main() {
 
 	cfg := config.Load()
 	database.Init(cfg)
+
+	// pprof 监听在独立端口 6060，不暴露到主业务端口
+	go func() {
+		slog.Info("pprof listening", "addr", ":6060")
+		if err := http.ListenAndServe("0.0.0.0:6060", nil); err != nil {
+			slog.Error("pprof server error", "err", err)
+		}
+	}()
 
 	// 启动后台服务：短信调度器、设备轮询、Telegram Bot 长轮询
 	ctx, cancel := context.WithCancel(context.Background())
@@ -155,6 +177,9 @@ func main() {
 
 	// ── 系统日志 SSE 流（JWT 通过 ?token= 传入）────────────────────
 	auth.GET("/admin/logs/stream", handlers.LogsSSE) // 实时推送后端日志（SSE，仅管理员）
+
+	// ── Swagger UI ──────────────────────────────────────────────────
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// ── WebSocket ───────────────────────────────────────────────────
 	r.GET("/ws/modems", handlers.ModemStatusWS) // WebSocket：每 5 秒推送所有设备状态

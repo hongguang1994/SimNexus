@@ -138,7 +138,15 @@ type requestCreate struct {
 	Reason         string `json:"reason"`
 }
 
-// CreateSimRequest submits an access request.
+// CreateSimRequest godoc
+// @Summary 申请SIM卡访问权限
+// @Tags SIM申请
+// @Accept json
+// @Produce json
+// @Param body body requestCreate true "申请信息"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/ [post]
 func CreateSimRequest(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var body requestCreate
@@ -177,7 +185,13 @@ func CreateSimRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// MyRequests returns the user's requests.
+// MyRequests godoc
+// @Summary 获取我的申请记录
+// @Tags SIM申请
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/my [get]
 func MyRequests(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var reqs []models.SimAccessRequest
@@ -195,7 +209,13 @@ func MyRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// MyGrants returns active grants for the user.
+// MyGrants godoc
+// @Summary 获取我的已授权列表
+// @Tags SIM申请
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/my-grants [get]
 func MyGrants(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	now := time.Now()
@@ -219,7 +239,14 @@ func MyGrants(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// ListRequests returns requests within the approver's scope.
+// ListRequests godoc
+// @Summary 审批员查看申请列表
+// @Tags SIM申请
+// @Produce json
+// @Param status query string false "状态过滤"
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/ [get]
 func ListRequests(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	ids, unrestricted := approverModemScope(approver)
@@ -260,7 +287,16 @@ type approveBody struct {
 	AdminNote    string     `json:"admin_note"`
 }
 
-// ApproveRequest approves a single request.
+// ApproveRequest godoc
+// @Summary 批准申请
+// @Tags SIM申请
+// @Accept json
+// @Produce json
+// @Param id path int true "申请ID"
+// @Param body body approveBody true "批准信息"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/{id}/approve [put]
 func ApproveRequest(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -296,7 +332,16 @@ type rejectBody struct {
 	AdminNote string `json:"admin_note"`
 }
 
-// RejectRequest rejects a request.
+// RejectRequest godoc
+// @Summary 拒绝申请
+// @Tags SIM申请
+// @Accept json
+// @Produce json
+// @Param id path int true "申请ID"
+// @Param body body rejectBody true "拒绝原因"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/{id}/reject [put]
 func RejectRequest(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -331,7 +376,15 @@ type batchApproveBody struct {
 	AdminNote    string     `json:"admin_note"`
 }
 
-// BatchApprove approves multiple requests.
+// BatchApprove godoc
+// @Summary 批量审批通过
+// @Tags SIM申请
+// @Accept json
+// @Produce json
+// @Param body body batchApproveBody true "批量审批参数"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/batch-approve [post]
 func BatchApprove(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	var body batchApproveBody
@@ -371,7 +424,15 @@ type directGrantBody struct {
 	AdminNote    string     `json:"admin_note"`
 }
 
-// DirectGrant grants access without a prior request.
+// DirectGrant godoc
+// @Summary 直接授权（无需申请）
+// @Tags SIM申请
+// @Accept json
+// @Produce json
+// @Param body body directGrantBody true "授权信息"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/grant [post]
 func DirectGrant(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	var body directGrantBody
@@ -403,7 +464,14 @@ func DirectGrant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// RevokeGrant removes an active grant.
+// RevokeGrant godoc
+// @Summary 撤销授权
+// @Tags SIM申请
+// @Produce json
+// @Param id path int true "授权ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sim-requests/grants/{id} [delete]
 func RevokeGrant(c *gin.Context) {
 	approver := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))

@@ -43,7 +43,15 @@ func supportMsgOut(m *models.SupportMessage) gin.H {
 	}
 }
 
-// SupportUpload stores an uploaded file and returns its URL.
+// SupportUpload godoc
+// @Summary 上传客服附件
+// @Tags 客服
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "附件"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/support/upload [post]
 func SupportUpload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -72,7 +80,12 @@ func SupportUpload(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"url": "/api/support/files/" + name, "name": file.Filename, "type": attType})
 }
 
-// SupportServeFile serves an uploaded file.
+// SupportServeFile godoc
+// @Summary 下载客服附件
+// @Tags 客服
+// @Param filename path string true "文件名"
+// @Success 200 {file} binary
+// @Router /api/v1/support/files/{filename} [get]
 func SupportServeFile(c *gin.Context) {
 	filename := c.Param("filename")
 	if strings.Contains(filename, "/") || strings.Contains(filename, "..") {
@@ -103,7 +116,15 @@ func strPtr(s string) *string {
 	return &s
 }
 
-// SupportSendMessage posts a support chat message.
+// SupportSendMessage godoc
+// @Summary 发送客服消息
+// @Tags 客服
+// @Accept json
+// @Produce json
+// @Param body body messageIn true "消息内容"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/support/messages [post]
 func SupportSendMessage(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var body messageIn
@@ -159,7 +180,15 @@ func SupportSendMessage(c *gin.Context) {
 	c.JSON(http.StatusOK, supportMsgOut(&msg))
 }
 
-// SupportGetMessages returns a conversation's messages.
+// SupportGetMessages godoc
+// @Summary 获取客服消息记录
+// @Tags 客服
+// @Produce json
+// @Param user_id query int false "用户ID（客服用）"
+// @Param since_id query int false "增量拉取起始ID"
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/support/messages [get]
 func SupportGetMessages(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	q := database.DB.Model(&models.SupportMessage{})
@@ -185,7 +214,14 @@ func SupportGetMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// SupportMarkRead marks a conversation read.
+// SupportMarkRead godoc
+// @Summary 标记消息已读
+// @Tags 客服
+// @Produce json
+// @Param user_id query int false "用户ID（客服用）"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/support/messages/read [post]
 func SupportMarkRead(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	if security.IsSupportStaff(me) {
@@ -205,7 +241,13 @@ func SupportMarkRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// SupportUnread returns unread count.
+// SupportUnread godoc
+// @Summary 获取未读消息数量
+// @Tags 客服
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/support/unread [get]
 func SupportUnread(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var count int64
@@ -219,7 +261,13 @@ func SupportUnread(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
-// SupportConversations lists conversations (staff only).
+// SupportConversations godoc
+// @Summary 获取所有会话列表（客服）
+// @Tags 客服
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/support/conversations [get]
 func SupportConversations(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	if !security.IsSupportStaff(me) {

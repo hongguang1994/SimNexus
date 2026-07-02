@@ -39,7 +39,15 @@ type smsSendRequest struct {
 	Content     string `json:"content"`
 }
 
-// SendSMS sends a message immediately.
+// SendSMS godoc
+// @Summary 立即发送短信
+// @Tags 短信
+// @Accept json
+// @Produce json
+// @Param body body smsSendRequest true "发送参数"
+// @Success 200 {object} models.SmsMessage
+// @Security BearerAuth
+// @Router /api/v1/sms/send [post]
 func SendSMS(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var req smsSendRequest
@@ -116,7 +124,17 @@ func modemDisplayLabel(m *models.Modem) string {
 	return "设备#" + strconv.Itoa(int(m.ID))
 }
 
-// ListMessages returns SMS history filtered by visibility.
+// ListMessages godoc
+// @Summary 获取短信记录
+// @Tags 短信
+// @Produce json
+// @Param modem_id query int false "设备ID过滤"
+// @Param direction query string false "方向过滤(inbound/outbound)"
+// @Param skip query int false "偏移量"
+// @Param limit query int false "每页数量"
+// @Success 200 {array} models.SmsMessage
+// @Security BearerAuth
+// @Router /api/v1/sms/messages [get]
 func ListMessages(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	q := database.DB.Model(&models.SmsMessage{})
@@ -152,7 +170,14 @@ func deleteFromModem(msg *models.SmsMessage) {
 	}
 }
 
-// DeleteMessage removes one SMS record.
+// DeleteMessage godoc
+// @Summary 删除单条短信记录
+// @Tags 短信
+// @Produce json
+// @Param id path int true "记录ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/messages/{id} [delete]
 func DeleteMessage(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -175,7 +200,15 @@ type batchDeleteBody struct {
 	IDs []uint `json:"ids"`
 }
 
-// BatchDeleteMessages deletes multiple SMS records.
+// BatchDeleteMessages godoc
+// @Summary 批量删除短信记录
+// @Tags 短信
+// @Accept json
+// @Produce json
+// @Param body body batchDeleteBody true "ID列表"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/messages/batch-delete [post]
 func BatchDeleteMessages(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var body batchDeleteBody
@@ -200,14 +233,28 @@ func BatchDeleteMessages(c *gin.Context) {
 
 // Templates
 
-// ListTemplates returns all SMS templates.
+// ListTemplates godoc
+// @Summary 获取短信模板列表
+// @Tags 短信
+// @Produce json
+// @Success 200 {array} models.SmsTemplate
+// @Security BearerAuth
+// @Router /api/v1/sms/templates [get]
 func ListTemplates(c *gin.Context) {
 	var tpls []models.SmsTemplate
 	database.DB.Find(&tpls)
 	c.JSON(http.StatusOK, tpls)
 }
 
-// CreateTemplate creates an SMS template.
+// CreateTemplate godoc
+// @Summary 创建短信模板
+// @Tags 短信
+// @Accept json
+// @Produce json
+// @Param body body models.SmsTemplate true "模板内容"
+// @Success 200 {object} models.SmsTemplate
+// @Security BearerAuth
+// @Router /api/v1/sms/templates [post]
 func CreateTemplate(c *gin.Context) {
 	var tpl models.SmsTemplate
 	if err := c.ShouldBindJSON(&tpl); err != nil {
@@ -218,7 +265,14 @@ func CreateTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, tpl)
 }
 
-// DeleteTemplate removes a template.
+// DeleteTemplate godoc
+// @Summary 删除短信模板
+// @Tags 短信
+// @Produce json
+// @Param id path int true "模板ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/templates/{id} [delete]
 func DeleteTemplate(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var tpl models.SmsTemplate
@@ -245,7 +299,13 @@ func taskToOut(t *models.SmsScheduledTask) gin.H {
 	return out
 }
 
-// ListTasks returns scheduled tasks for the user.
+// ListTasks godoc
+// @Summary 获取定时任务列表
+// @Tags 短信
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/tasks [get]
 func ListTasks(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	q := database.DB.Model(&models.SmsScheduledTask{})
@@ -274,7 +334,15 @@ type taskCreate struct {
 	SendOnceAt     *time.Time `json:"send_once_at"`
 }
 
-// CreateTask creates a scheduled task.
+// CreateTask godoc
+// @Summary 创建定时任务
+// @Tags 短信
+// @Accept json
+// @Produce json
+// @Param body body taskCreate true "任务参数"
+// @Success 200 {object} models.SmsScheduledTask
+// @Security BearerAuth
+// @Router /api/v1/sms/tasks [post]
 func CreateTask(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var data taskCreate
@@ -321,7 +389,16 @@ type taskUpdate struct {
 	Status         *string    `json:"status"`
 }
 
-// UpdateTask patches a scheduled task.
+// UpdateTask godoc
+// @Summary 修改定时任务
+// @Tags 短信
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID"
+// @Param body body taskUpdate true "修改字段"
+// @Success 200 {object} models.SmsScheduledTask
+// @Security BearerAuth
+// @Router /api/v1/sms/tasks/{id} [patch]
 func UpdateTask(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -362,7 +439,14 @@ func UpdateTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
-// DeleteTask removes a scheduled task.
+// DeleteTask godoc
+// @Summary 删除定时任务
+// @Tags 短信
+// @Produce json
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/tasks/{id} [delete]
 func DeleteTask(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -380,7 +464,14 @@ func DeleteTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// RunTaskNow fires a task immediately.
+// RunTaskNow godoc
+// @Summary 立即执行定时任务
+// @Tags 短信
+// @Produce json
+// @Param id path int true "任务ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/tasks/{id}/run-now [post]
 func RunTaskNow(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var task models.SmsScheduledTask
@@ -392,7 +483,15 @@ func RunTaskNow(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// AdminListTasks returns tasks for monitoring.
+// AdminListTasks godoc
+// @Summary 管理员查看所有任务
+// @Tags 短信
+// @Produce json
+// @Param user_id query int false "按用户过滤"
+// @Param status query string false "按状态过滤"
+// @Success 200 {array} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/admin/tasks [get]
 func AdminListTasks(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	q := database.DB.Model(&models.SmsScheduledTask{})
@@ -413,7 +512,13 @@ func AdminListTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// AdminTaskStats returns aggregate task counts.
+// AdminTaskStats godoc
+// @Summary 获取任务统计数据
+// @Tags 短信
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/sms/admin/tasks/stats [get]
 func AdminTaskStats(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	q := database.DB.Model(&models.SmsScheduledTask{})
@@ -438,7 +543,15 @@ func AdminTaskStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// AdminTaskHistory returns SMS sent by a task.
+// AdminTaskHistory godoc
+// @Summary 获取任务执行历史
+// @Tags 短信
+// @Produce json
+// @Param id path int true "任务ID"
+// @Param limit query int false "返回条数"
+// @Success 200 {array} models.SmsMessage
+// @Security BearerAuth
+// @Router /api/v1/sms/admin/tasks/{id}/history [get]
 func AdminTaskHistory(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))

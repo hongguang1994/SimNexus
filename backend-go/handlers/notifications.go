@@ -27,7 +27,14 @@ func visibleNotificationFilter(me *models.User, q *gorm.DB) *gorm.DB {
 	return q.Where(cond, args...)
 }
 
-// ListNotifications returns notifications visible to the user.
+// ListNotifications godoc
+// @Summary 获取通知列表
+// @Tags 通知
+// @Produce json
+// @Param limit query int false "每页数量"
+// @Success 200 {array} models.Notification
+// @Security BearerAuth
+// @Router /api/v1/notifications [get]
 func ListNotifications(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -40,7 +47,13 @@ func ListNotifications(c *gin.Context) {
 	c.JSON(http.StatusOK, ns)
 }
 
-// UnreadCount returns count of unread visible notifications.
+// UnreadCount godoc
+// @Summary 获取未读通知数量
+// @Tags 通知
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/notifications/unread-count [get]
 func UnreadCount(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	var count int64
@@ -49,7 +62,13 @@ func UnreadCount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
-// MarkAllRead marks all visible notifications read.
+// MarkAllRead godoc
+// @Summary 一键标记所有通知为已读
+// @Tags 通知
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/notifications/read-all [post]
 func MarkAllRead(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	visibleNotificationFilter(me, database.DB.Model(&models.Notification{})).
@@ -57,7 +76,14 @@ func MarkAllRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// MarkOneRead marks a single notification read.
+// MarkOneRead godoc
+// @Summary 标记单条通知为已读
+// @Tags 通知
+// @Produce json
+// @Param id path int true "通知ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /api/v1/notifications/{id}/read [post]
 func MarkOneRead(c *gin.Context) {
 	me := middleware.CurrentUser(c)
 	id, _ := strconv.Atoi(c.Param("id"))
