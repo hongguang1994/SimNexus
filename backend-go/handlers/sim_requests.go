@@ -16,9 +16,9 @@ import (
 
 // requestCreate 申请 SIM 卡访问权限的请求体。
 type requestCreate struct {
-	ModemID        uint   `json:"modem_id"`
-	RequestedLevel string `json:"requested_level"` // view 或 use，默认 use
-	Reason         string `json:"reason"`
+	ModemID        uint   `json:"modem_id"         binding:"required,gt=0"`
+	RequestedLevel string `json:"requested_level"  binding:"omitempty,oneof=view use"` // 默认 use
+	Reason         string `json:"reason"           binding:"omitempty,max=500"`
 }
 
 // CreateSimRequest godoc
@@ -134,9 +134,9 @@ func ListRequests(c *gin.Context) {
 
 // approveBody 批准申请的请求体。
 type approveBody struct {
-	GrantedLevel string     `json:"granted_level"` // view 或 use，默认 use
-	ExpiresAt    *time.Time `json:"expires_at"`    // 有效期（nil 表示永久）
-	AdminNote    string     `json:"admin_note"`    // 审批备注
+	GrantedLevel string     `json:"granted_level" binding:"omitempty,oneof=view use"` // 默认 use
+	ExpiresAt    *time.Time `json:"expires_at"`                                        // 有效期（nil 表示永久）
+	AdminNote    string     `json:"admin_note"    binding:"omitempty,max=500"`
 }
 
 // ApproveRequest godoc
@@ -181,7 +181,7 @@ func ApproveRequest(c *gin.Context) {
 
 // rejectBody 拒绝申请的请求体。
 type rejectBody struct {
-	AdminNote string `json:"admin_note"`
+	AdminNote string `json:"admin_note" binding:"omitempty,max=500"`
 }
 
 // RejectRequest godoc
@@ -224,10 +224,10 @@ func RejectRequest(c *gin.Context) {
 
 // batchApproveBody 批量审批通过的请求体。
 type batchApproveBody struct {
-	IDs          []uint     `json:"ids"`
-	GrantedLevel string     `json:"granted_level"`
+	IDs          []uint     `json:"ids"           binding:"required,min=1"`
+	GrantedLevel string     `json:"granted_level" binding:"omitempty,oneof=view use"`
 	ExpiresAt    *time.Time `json:"expires_at"`
-	AdminNote    string     `json:"admin_note"`
+	AdminNote    string     `json:"admin_note"    binding:"omitempty,max=500"`
 }
 
 // BatchApprove godoc
@@ -258,11 +258,11 @@ func BatchApprove(c *gin.Context) {
 
 // directGrantBody 直接授权（无需申请）的请求体。
 type directGrantBody struct {
-	UserID       uint       `json:"user_id"`
-	ModemID      uint       `json:"modem_id"`
-	GrantedLevel string     `json:"granted_level"`
+	UserID       uint       `json:"user_id"       binding:"required,gt=0"`
+	ModemID      uint       `json:"modem_id"      binding:"required,gt=0"`
+	GrantedLevel string     `json:"granted_level" binding:"omitempty,oneof=view use"`
 	ExpiresAt    *time.Time `json:"expires_at"`
-	AdminNote    string     `json:"admin_note"`
+	AdminNote    string     `json:"admin_note"    binding:"omitempty,max=500"`
 }
 
 // DirectGrant godoc

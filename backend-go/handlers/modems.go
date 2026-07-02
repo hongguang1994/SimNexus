@@ -90,7 +90,7 @@ func GetModem(c *gin.Context) {
 
 // modemUpdate 设备可编辑字段（目前仅支持别名）。
 type modemUpdate struct {
-	Alias *string `json:"alias"`
+	Alias *string `json:"alias" binding:"omitempty,max=64"` // 可选，最多 64 字符
 }
 
 // UpdateModem godoc

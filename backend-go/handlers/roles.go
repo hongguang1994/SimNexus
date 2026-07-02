@@ -14,14 +14,14 @@ import (
 
 // roleBody 创建/更新角色的请求体，布尔字段使用指针以区分"未传"与"传 false"。
 type roleBody struct {
-	Name               string  `json:"name"`
+	Name               string  `json:"name"                binding:"required,min=1,max=64"` // 创建时必填
 	Description        string  `json:"description"`
 	CanViewSim         *bool   `json:"can_view_sim"`
 	CanApproveRequests *bool   `json:"can_approve_requests"`
 	CanViewHistory     *bool   `json:"can_view_history"`
 	ReadOnly           *bool   `json:"read_only"`
 	CanSupport         *bool   `json:"can_support"`
-	AllowedModemIDs    *[]uint `json:"allowed_modem_ids"`
+	AllowedModemIDs    *[]uint `json:"allowed_modem_ids"` // nil=不限制，[]uint{}=清除范围
 }
 
 // ListRoles godoc

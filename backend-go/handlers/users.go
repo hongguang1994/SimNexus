@@ -35,9 +35,9 @@ func ListUsers(c *gin.Context) {
 
 // userCreate 创建用户的请求体。
 type userCreate struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
+	Username string `json:"username" binding:"required,min=2,max=64"`
+	Password string `json:"password" binding:"required,min=6"`
+	Role     string `json:"role"`    // 可选，默认为 user
 }
 
 // CreateUser godoc
@@ -76,8 +76,8 @@ func CreateUser(c *gin.Context) {
 
 // userUpdate 修改用户的请求体，字段均为可选。
 type userUpdate struct {
-	Role     *string `json:"role"`
-	IsActive *bool   `json:"is_active"`
+	Role     *string `json:"role"`      // 可选，admin 或 user
+	IsActive *bool   `json:"is_active"` // 可选，true=启用 false=禁用
 }
 
 // UpdateUser godoc
@@ -131,7 +131,7 @@ func DeleteUser(c *gin.Context) {
 
 // passwordReset 管理员重置密码请求体。
 type passwordReset struct {
-	NewPassword string `json:"new_password"`
+	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
 // ResetPassword godoc
@@ -166,8 +166,8 @@ func ResetPassword(c *gin.Context) {
 
 // passwordChange 用户修改自己密码的请求体。
 type passwordChange struct {
-	OldPassword string `json:"old_password"`
-	NewPassword string `json:"new_password"`
+	OldPassword string `json:"old_password" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
 // ChangePassword godoc
@@ -200,7 +200,7 @@ func ChangePassword(c *gin.Context) {
 
 // setRolesBody 设置用户角色的请求体。
 type setRolesBody struct {
-	RoleIDs []uint `json:"role_ids"`
+	RoleIDs []uint `json:"role_ids" binding:"required"` // 传空数组 [] 表示清空角色
 }
 
 // SetUserRoles godoc

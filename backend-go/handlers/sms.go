@@ -16,9 +16,9 @@ import (
 
 // smsSendRequest 立即发送短信的请求体。
 type smsSendRequest struct {
-	ModemID     uint   `json:"modem_id"`
-	PhoneNumber string `json:"phone_number"`
-	Content     string `json:"content"`
+	ModemID     uint   `json:"modem_id"     binding:"required,gt=0"`
+	PhoneNumber string `json:"phone_number" binding:"required"`
+	Content     string `json:"content"      binding:"required,max=1000"`
 }
 
 // SendSMS godoc
@@ -121,7 +121,7 @@ func DeleteMessage(c *gin.Context) {
 
 // batchDeleteBody 批量删除短信的请求体。
 type batchDeleteBody struct {
-	IDs []uint `json:"ids"`
+	IDs []uint `json:"ids" binding:"required,min=1"` // 至少传一个 ID
 }
 
 // BatchDeleteMessages godoc
@@ -232,12 +232,12 @@ func ListTasks(c *gin.Context) {
 
 // taskCreate 创建定时任务的请求体。
 type taskCreate struct {
-	Name           string     `json:"name"`
-	ModemID        uint       `json:"modem_id"`
-	Recipients     []string   `json:"recipients"`
-	Content        string     `json:"content"`
-	CronExpression *string    `json:"cron_expression"` // 与 SendOnceAt 二选一
-	SendOnceAt     *time.Time `json:"send_once_at"`    // UTC 时间，前端必须转换
+	Name           string     `json:"name"            binding:"required,max=128"`
+	ModemID        uint       `json:"modem_id"        binding:"required,gt=0"`
+	Recipients     []string   `json:"recipients"      binding:"required,min=1"` // 至少一个收件人
+	Content        string     `json:"content"         binding:"required,max=1000"`
+	CronExpression *string    `json:"cron_expression"` // 与 SendOnceAt 二选一，可选
+	SendOnceAt     *time.Time `json:"send_once_at"`    // UTC 时间，前端须转换，可选
 }
 
 // CreateTask godoc
@@ -279,12 +279,12 @@ func CreateTask(c *gin.Context) {
 
 // taskUpdate 更新定时任务的请求体，所有字段均为可选。
 type taskUpdate struct {
-	Name           *string    `json:"name"`
-	Recipients     *[]string  `json:"recipients"`
-	Content        *string    `json:"content"`
+	Name           *string    `json:"name"            binding:"omitempty,max=128"`
+	Recipients     *[]string  `json:"recipients"      binding:"omitempty,min=1"`
+	Content        *string    `json:"content"         binding:"omitempty,max=1000"`
 	CronExpression *string    `json:"cron_expression"`
 	SendOnceAt     *time.Time `json:"send_once_at"`
-	Status         *string    `json:"status"`
+	Status         *string    `json:"status"          binding:"omitempty,oneof=active paused"` // 只允许这两个值
 }
 
 // UpdateTask godoc

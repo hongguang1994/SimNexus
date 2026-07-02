@@ -87,11 +87,11 @@ func SupportServeFile(c *gin.Context) {
 
 // messageIn 发送客服消息的请求体。
 type messageIn struct {
-	Content        string `json:"content"`
-	UserID         *uint  `json:"user_id"`         // 客服发消息时必填（目标用户）
-	AttachmentURL  string `json:"attachment_url"`  // 上传后返回的访问路径
-	AttachmentName string `json:"attachment_name"` // 原始文件名
-	AttachmentType string `json:"attachment_type"` // image 或 file
+	Content        string `json:"content"          binding:"omitempty,max=2000"`
+	UserID         *uint  `json:"user_id"`                                          // 客服发消息时必填（目标用户）
+	AttachmentURL  string `json:"attachment_url"   binding:"omitempty,max=500"`
+	AttachmentName string `json:"attachment_name"  binding:"omitempty,max=255"`
+	AttachmentType string `json:"attachment_type"  binding:"omitempty,oneof=image file"` // image 或 file
 }
 
 // SupportSendMessage godoc

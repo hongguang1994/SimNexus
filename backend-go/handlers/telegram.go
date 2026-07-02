@@ -32,8 +32,8 @@ func TelegramListMessages(c *gin.Context) {
 }
 
 type telegramSend struct {
-	Text   string `json:"text"`
-	ChatID string `json:"chat_id"`
+	Text   string `json:"text"    binding:"required"`
+	ChatID string `json:"chat_id" binding:"omitempty"` // 可选，空时使用配置中的默认 chat_id
 }
 
 // TelegramSend godoc
