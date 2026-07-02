@@ -35,22 +35,6 @@ func main() {
 	r.Use(middleware.SlogLogger())
 	r.Use(middleware.CORS(cfg.CorsOrigins))
 
-	// Telegram 接口保留在 /api（无版本号），其余全部走 /api/v1
-	legacy := r.Group("/api")
-
-	// ── Telegram 管理（仅管理员，不加版本号以保持兼容）────────────────────────────
-	tgLegacy := legacy.Group("/telegram")
-	tgLegacy.Use(middleware.AuthRequired())
-	{
-		tgLegacy.GET("/messages", middleware.RequireAdmin(), handlers.TelegramListMessages)     // 获取 Telegram 消息记录
-		tgLegacy.POST("/send", middleware.RequireAdmin(), handlers.TelegramSend)                // 向 Telegram 发送文字消息
-		tgLegacy.POST("/send-file", middleware.RequireAdmin(), handlers.TelegramSendFile)       // 向 Telegram 发送图片或文件
-		tgLegacy.DELETE("/messages", middleware.RequireAdmin(), handlers.TelegramClearMessages) // 清空 Telegram 消息记录
-		tgLegacy.GET("/config", middleware.RequireAdmin(), handlers.TelegramConfig)             // 查看 Bot 配置状态
-	}
-	// Telegram 文件代理下载（JWT 通过 ?token= 传入，内部自行验证）
-	legacy.GET("/telegram/file/*file_id", handlers.TelegramProxyFile)
-
 	api := r.Group("/api/v1")
 
 	// 健康检查（无需认证）
@@ -156,6 +140,18 @@ func main() {
 
 	// ── 仪表盘 ───────────────────────────────────────────────────────
 	auth.GET("/dashboard/stats", handlers.DashboardStats) // 获取仪表盘统计数据（设备数、短信量等）
+
+	// ── Telegram 管理（仅管理员）────────────────────────────────────
+	tg := auth.Group("/telegram")
+	{
+		tg.GET("/messages", middleware.RequireAdmin(), handlers.TelegramListMessages)     // 获取 Telegram 消息记录
+		tg.POST("/send", middleware.RequireAdmin(), handlers.TelegramSend)                // 向 Telegram 发送文字消息
+		tg.POST("/send-file", middleware.RequireAdmin(), handlers.TelegramSendFile)       // 向 Telegram 发送图片或文件
+		tg.DELETE("/messages", middleware.RequireAdmin(), handlers.TelegramClearMessages) // 清空 Telegram 消息记录
+		tg.GET("/config", middleware.RequireAdmin(), handlers.TelegramConfig)             // 查看 Bot 配置状态
+	}
+	// Telegram 文件代理下载（JWT 通过 ?token= 传入，内部自行验证）
+	api.GET("/telegram/file/*file_id", handlers.TelegramProxyFile)
 
 	// ── 系统日志 SSE 流（JWT 通过 ?token= 传入）────────────────────
 	auth.GET("/admin/logs/stream", handlers.LogsSSE) // 实时推送后端日志（SSE，仅管理员）

@@ -16,7 +16,7 @@ function StatusDot({ ok }: { ok: boolean }) {
 
 export default function TelegramAdmin() {
   const token = useAuthStore(s => s.token)
-  const fileUrl = (fileId: string) => `/api/telegram/file/${fileId}?token=${token}`
+  const fileUrl = (fileId: string) => `/api/v1/telegram/file/${fileId}?token=${token}`
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [messages, setMessages] = useState<TelegramMessage[]>([])
   const [config, setConfig] = useState<TelegramConfig | null>(null)
