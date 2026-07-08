@@ -58,6 +58,8 @@ func (s *SmsService) SendSMS(u *models.User, modemID uint, phone, content string
 	if !s.requireUseGrant(u, modemID) {
 		return nil, ErrNoUsePerm
 	}
+	// PDU 号码格式不允许空格等分隔符，去除后再发送（modem manager 会拒绝含空格的号码）
+	phone = strings.Join(strings.Fields(phone), "")
 	var modem models.Modem
 	if s.db.First(&modem, modemID).Error != nil {
 		return nil, ErrModemNotFound
@@ -66,7 +68,10 @@ func (s *SmsService) SendSMS(u *models.User, modemID uint, phone, content string
 	obj := modem.MmObjectPath
 	var success bool
 	var errMsg string
-	if strings.HasPrefix(obj, "zte:") {
+	if modem.VowifiMode {
+		// 该卡处于 VoWiFi 模式：走自建 IKEv2/EAP-AKA/IMS-ESP 协议栈发短信
+		success, errMsg = NewVowifiService().SendSMS(&modem, phone, content)
+	} else if strings.HasPrefix(obj, "zte:") {
 		// ZTE 便携 WiFi 设备通过 HTTP goform 接口发送
 		success = ZteSendSMS(phone, content)
 		if !success {

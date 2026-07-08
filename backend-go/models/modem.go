@@ -46,6 +46,13 @@ type Modem struct {
 	CurrentModes     string `gorm:"size:200" json:"current_modes"`
 	Ports            string `gorm:"size:300" json:"ports"`
 	Plugin           string `gorm:"size:50" json:"plugin"` // mmcli 插件名
+
+	// VoWiFi（Wi-Fi Calling）相关：VowifiMode=true 时该卡改走自建 VoWiFi 协议栈
+	// （IKEv2/EAP-AKA/IMS-ESP）收发短信，而非 mmcli。进入该模式要求该卡不再由
+	// ModemManager 管理（独占串口 + 裸 socket）。
+	VowifiMode   bool   `gorm:"default:false" json:"vowifi_mode"`
+	VowifiEpdgIP string `gorm:"size:64" json:"vowifi_epdg_ip"` // ePDG IPv4（留空则用环境变量 VOWIFI_EPDG_IP）
+	VowifiATPort string `gorm:"size:64" json:"vowifi_at_port"` // 串口设备，如 /dev/ttyUSB2（留空则用 VOWIFI_AT_PORT）
 }
 
 func (Modem) TableName() string { return "modems" }

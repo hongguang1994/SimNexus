@@ -88,6 +88,27 @@ func (s *ModemService) UpdateModemAlias(id uint, alias *string) (*models.Modem, 
 	return &modem, nil
 }
 
+// SetVowifiMode 切换某张卡的 VoWiFi 模式并可选更新 ePDG/串口配置。
+// 注意：真正的模式生效（停止 ModemManager 对该卡的管理、独占串口）是运维层动作，
+// 这里只持久化标志与配置；调用方需保证该卡在 VoWiFi 模式下不再被 mmcli/轮询器占用。
+func (s *ModemService) SetVowifiMode(id uint, mode *bool, epdgIP, atPort *string) (*models.Modem, error) {
+	var modem models.Modem
+	if s.db.First(&modem, id).Error != nil {
+		return nil, ErrModemNotFound
+	}
+	if mode != nil {
+		modem.VowifiMode = *mode
+	}
+	if epdgIP != nil {
+		modem.VowifiEpdgIP = *epdgIP
+	}
+	if atPort != nil {
+		modem.VowifiATPort = *atPort
+	}
+	s.db.Save(&modem)
+	return &modem, nil
+}
+
 // GetModemDetail 查询设备详情并附加短信统计，需校验用户权限。
 func (s *ModemService) GetModemDetail(id uint, u *models.User) (*ModemDetail, error) {
 	if !u.IsAdmin() && !s.canAccessModem(u, id) {

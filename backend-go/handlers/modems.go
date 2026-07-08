@@ -116,6 +116,45 @@ func UpdateModem(c *gin.Context) {
 	OK(c, modem)
 }
 
+// vowifiModeUpdate VoWiFi 模式切换请求体。
+type vowifiModeUpdate struct {
+	VowifiMode   *bool   `json:"vowifi_mode"`
+	VowifiEpdgIP *string `json:"vowifi_epdg_ip" binding:"omitempty,max=64"`
+	VowifiATPort *string `json:"vowifi_at_port" binding:"omitempty,max=64"`
+}
+
+// SetVowifiMode godoc
+// @Summary 切换 SIM 卡的 VoWiFi 模式（仅管理员）
+// @Description 开启后该卡改走自建 VoWiFi 协议栈收发短信；需保证该卡已从 ModemManager 分离。
+// @Tags 设备管理
+// @Accept json
+// @Produce json
+// @Param id path int true "设备ID"
+// @Param body body vowifiModeUpdate true "VoWiFi 配置"
+// @Success 200 {object} handlers.R{data=models.Modem}
+// @Security BearerAuth
+// @Router /api/v1/modems/{id}/vowifi [patch]
+func SetVowifiMode(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	if !u.IsAdmin() {
+		Fail(c, http.StatusForbidden, 403, "仅管理员可切换 VoWiFi 模式")
+		return
+	}
+	id, _ := strconv.Atoi(c.Param("id"))
+	var data vowifiModeUpdate
+	if err := c.ShouldBindJSON(&data); err != nil {
+		Fail(c, http.StatusBadRequest, 400, "参数错误")
+		return
+	}
+	svc := services.NewModemService(database.DB)
+	modem, err := svc.SetVowifiMode(uint(id), data.VowifiMode, data.VowifiEpdgIP, data.VowifiATPort)
+	if err != nil {
+		Fail(c, http.StatusNotFound, 404, err.Error())
+		return
+	}
+	OK(c, modem)
+}
+
 // GetModemDetail godoc
 // @Summary 获取设备详情（含短信统计）
 // @Tags 设备管理
