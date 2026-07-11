@@ -527,3 +527,5 @@ mmcli -m 0 --messaging-create-sms="number=+8613800138000,text=test"
 ## License
 
 MIT
+
+> 部署与使用问题见各章节；一键部署用根目录 `./deploy.sh`。
