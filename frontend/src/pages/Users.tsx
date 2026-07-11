@@ -157,8 +157,8 @@ export default function Users() {
           <RefreshCw className="w-4 h-4 animate-spin" /> {t('users_loading')}
         </div>
       ) : (
-        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
                 {[t('users_col_id'), t('users_col_username'), t('users_col_role'), t('users_col_status'), t('users_col_created'), t('users_col_actions')].map(h => (

@@ -69,8 +69,8 @@ func (s *SmsService) SendSMS(u *models.User, modemID uint, phone, content string
 	var success bool
 	var errMsg string
 	if modem.VowifiMode {
-		// 该卡处于 VoWiFi 模式：走自建 IKEv2/EAP-AKA/IMS-ESP 协议栈发短信
-		success, errMsg = NewVowifiService().SendSMS(&modem, phone, content)
+		// 该卡处于 VoWiFi 模式：走常驻 VoWiFi 会话发短信（同一会话也负责接收 MT）
+		success, errMsg = GetVowifiManager().SendSMS(&modem, phone, content)
 	} else if strings.HasPrefix(obj, "zte:") {
 		// ZTE 便携 WiFi 设备通过 HTTP goform 接口发送
 		success = ZteSendSMS(phone, content)
@@ -87,10 +87,15 @@ func (s *SmsService) SendSMS(u *models.User, modemID uint, phone, content string
 	}
 
 	// 构建短信记录并入库，无论成功失败都保留记录
+	channel := models.SmsChannelCellular
+	if modem.VowifiMode {
+		channel = models.SmsChannelVowifi
+	}
 	now := time.Now()
 	msg := &models.SmsMessage{
 		ModemID:     modem.ID,
 		Direction:   models.SmsOutbound,
+		Channel:     channel,
 		PhoneNumber: phone,
 		Content:     content,
 		Status:      models.SmsSent,
@@ -103,6 +108,7 @@ func (s *SmsService) SendSMS(u *models.User, modemID uint, phone, content string
 		msg.ErrorMessage = &errMsg
 	}
 	s.db.Create(msg)
+	broadcastMessage(msg) // WebSocket 实时推送
 	return &SendResult{Message: msg, Success: success, ErrMsg: errMsg}, nil
 }
 

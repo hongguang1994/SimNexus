@@ -110,7 +110,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {statCards.map(s => {
           const Icon = s.icon
           return (
@@ -137,7 +137,7 @@ export default function Dashboard() {
       {/* Charts row 1: SMS trend + Success rate */}
       <div>
         <SectionTitle>{t('dash_sms_section')}</SectionTitle>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* SMS trend - spans 2 cols */}
           <div className="col-span-2">
             <ChartCard title={t('dash_trend_title')} subtitle={t('dash_trend_subtitle')}>
@@ -189,7 +189,7 @@ export default function Dashboard() {
       {/* Charts row 2: Task status + Signal */}
       <div>
         <SectionTitle>{t('dash_device_section')}</SectionTitle>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Task status */}
           <ChartCard title={t('dash_task_title')} subtitle={t('dash_task_subtitle')}>
             <ResponsiveContainer width="100%" height={150}>

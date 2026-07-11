@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { format } from 'date-fns'
-import { ArrowDownLeft, ArrowUpRight, Copy, Check, RefreshCw, MessageSquare, Trash2, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Copy, Check, RefreshCw, MessageSquare, Trash2, X, Wifi, Radio } from 'lucide-react'
 import { getMessagesApi, deleteMessageApi, batchDeleteMessagesApi, SmsMessage } from '../api/sms'
 import { useModemStore } from '../store/modemStore'
 import { useT } from '../i18n'
@@ -84,6 +84,22 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border', c.cls)}>
       {c.label}
+    </span>
+  )
+}
+
+// ChannelBadge 显示该条短信走的收发渠道：VoWiFi 或 蜂窝(ModemManager)。
+function ChannelBadge({ channel, t }: { channel?: string; t: ReturnType<typeof useT> }) {
+  if (channel === 'vowifi') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-indigo-500/15 text-indigo-300 border-indigo-500/30" title="IMS over Wi-Fi">
+        <Wifi className="w-3 h-3" />{t('hist_channel_vowifi')}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-500/15 text-gray-400 border-gray-500/30" title="ModemManager / mmcli">
+      <Radio className="w-3 h-3" />{t('hist_channel_cellular')}
     </span>
   )
 }
@@ -284,6 +300,7 @@ export default function SmsHistory() {
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider w-20">{t('hist_col_dir')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('hist_col_device')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider w-24">{t('hist_col_channel')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('hist_col_phone')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('hist_col_content')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider w-24">{t('hist_col_status')}</th>
@@ -314,6 +331,7 @@ export default function SmsHistory() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs">{modemName(m.modem_id)}</td>
+                  <td className="px-4 py-3"><ChannelBadge channel={m.channel} t={t} /></td>
                   <td className="px-4 py-3 text-gray-200 font-mono text-xs">{m.phone_number}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 max-w-xs">

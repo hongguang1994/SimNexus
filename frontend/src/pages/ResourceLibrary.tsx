@@ -96,7 +96,7 @@ function ApplyModal({ modem, onClose, onDone }: { modem: Modem; onClose: () => v
 
         <div>
           <p className="text-xs text-blue-200/50 uppercase tracking-wider mb-2">{t('rlib_modal_level_label')}</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {([
               ['use', t('rlib_modal_level_use_title'), t('rlib_modal_level_use_desc')],
               ['view', t('rlib_modal_level_view_title'), t('rlib_modal_level_view_desc')],

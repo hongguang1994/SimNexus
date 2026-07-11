@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"simnexus-go/services/vowifi"
 )
@@ -23,6 +24,8 @@ func main() {
 	smsc := flag.String("smsc", env("VOWIFI_SMSC", "+447802002606"), "SMSC")
 	to := flag.String("to", "", "收件号码，如 +8619143397207")
 	text := flag.String("text", "go vowifi test", "短信正文")
+	serve := flag.Bool("serve", false, "常驻模式：注册+SUBSCRIBE 后运行接收循环，等待 MT 短信")
+	serveMin := flag.Int("min", 5, "常驻模式运行分钟数")
 	flag.Parse()
 
 	cfg := vowifi.Config{
@@ -31,6 +34,24 @@ func main() {
 		USIMAID: "A0000000871002FF44FFFF8901010100",
 		Verbose: os.Getenv("VOWIFI_VERBOSE") != "",
 	}
+	cfg.Verbose = true
+
+	if *serve {
+		fmt.Println("[*] 常驻模式：建立会话（注册 + SUBSCRIBE）并运行接收循环...")
+		d, err := vowifi.StartDaemon(cfg, vowifi.NewSteps(), func(sms vowifi.InboundSMS) {
+			fmt.Printf("\n[✓✓✓] 收到 MT 短信！ sender=%q text=%q\n", sms.Sender, sms.Text)
+		})
+		if err != nil {
+			fmt.Println("[!] 常驻会话建立失败:", err)
+			os.Exit(1)
+		}
+		fmt.Printf("[*] 常驻会话已就绪，等待 %d 分钟接收 MT 短信...\n", *serveMin)
+		time.Sleep(time.Duration(*serveMin) * time.Minute)
+		d.Stop()
+		fmt.Println("[*] 常驻结束")
+		return
+	}
+
 	sess := vowifi.NewSession(cfg)
 	defer sess.Close()
 

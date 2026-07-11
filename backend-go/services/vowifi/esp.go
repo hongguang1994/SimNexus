@@ -158,6 +158,7 @@ func (s *Session) imsEspRecv2Raw(ik []byte, timeout time.Duration) (byte, []byte
 	okMD5 := equal(hmacTrunc12(md5.New, ik, body), icv)
 	okSHA1 := equal(hmacTrunc12(sha1.New, ik, body), icv)
 	if !okMD5 && !okSHA1 {
+		s.logf("[recv] 内层 ESP ICV 校验失败 esp_len=%d（收到包但解不开，可能丢分片/密钥不符）", len(esp))
 		return 0, nil, false
 	}
 	pl := body[8:]

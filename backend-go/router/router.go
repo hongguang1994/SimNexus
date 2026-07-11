@@ -20,6 +20,12 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 
 	// WebSocket：每 5 秒推送所有设备状态
 	r.GET("/ws/modems", handlers.ModemStatusWS)
+	// WebSocket：新短信（MT收/MO发）实时推送给消息中心
+	r.GET("/ws/messages", handlers.MessageWS)
+	// WebSocket：Telegram 消息（收/发）实时推送给管理端 Telegram 页面
+	r.GET("/ws/telegram", handlers.TelegramWS)
+	// WebSocket：客服会话消息实时推送给用户咨询页
+	r.GET("/ws/support", handlers.SupportWS)
 
 	api := r.Group("/api/v1")
 	registerPublic(api)
@@ -102,7 +108,7 @@ func registerModems(auth *gin.RouterGroup) {
 func registerSMS(auth *gin.RouterGroup) {
 	sms := auth.Group("/sms")
 	sms.POST("/send", handlers.SendSMS)                                          // 立即发送短信
-	sms.GET("/messages", middleware.RequireViewHistory(), handlers.ListMessages)  // 获取短信收发记录（需要查看历史权限）
+	sms.GET("/messages", middleware.RequireViewHistory(), handlers.ListMessages) // 获取短信收发记录（需要查看历史权限）
 	sms.DELETE("/messages/:id", handlers.DeleteMessage)                          // 删除单条短信记录
 	sms.POST("/messages/batch-delete", handlers.BatchDeleteMessages)             // 批量删除短信记录
 	sms.GET("/templates", handlers.ListTemplates)                                // 获取短信模板列表

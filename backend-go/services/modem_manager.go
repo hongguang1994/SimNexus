@@ -38,6 +38,7 @@ type ModemInfo struct {
 	CurrentModes       string
 	Ports              string
 	Plugin             string
+	FailedReason       string // state=failed 时的原因，如 sim-missing
 	Source             string // "zte" for ZTE devices
 }
 
@@ -174,6 +175,7 @@ func GetModemInfo(mmPath string) *ModemInfo {
 		CurrentModes:       asString(g["current-modes"]),
 		Ports:              joinList(g["ports"]),
 		Plugin:             asString(g["plugin"]),
+		FailedReason:       asString(g["state-failed-reason"]),
 	}
 }
 
@@ -238,16 +240,24 @@ func getSimInfo(simPath string) simInfo {
 	if err != nil {
 		return simInfo{}
 	}
+	// properties 里部分字段（如 emergency-numbers）是数组而非字符串，
+	// 用 map[string]string 解析会因类型不匹配导致整体 unmarshal 失败，
+	// 因此只声明我们关心的字符串字段，忽略其余字段类型。
 	var data struct {
 		Sim struct {
-			Properties map[string]string `json:"properties"`
+			Properties struct {
+				Imsi   string `json:"imsi"`
+				Iccid  string `json:"iccid"`
+				OpName string `json:"operator-name"`
+				OpCode string `json:"operator-code"`
+			} `json:"properties"`
 		} `json:"sim"`
 	}
 	if json.Unmarshal([]byte(out), &data) != nil {
 		return simInfo{}
 	}
 	p := data.Sim.Properties
-	return simInfo{p["imsi"], p["iccid"], p["operator-name"], p["operator-code"]}
+	return simInfo{p.Imsi, p.Iccid, p.OpName, p.OpCode}
 }
 
 // parseOwnNumber 从 mmcli generic 字段的 own-numbers 数组提取第一个号码。
@@ -299,7 +309,8 @@ func mapState(state string) string {
 // SendSMS creates, sends and deletes an SMS object. Returns (success, message).
 func SendSMS(mmIndex, phoneNumber, text string) (bool, string) {
 	escaped := strings.ReplaceAll(text, `"`, `\"`)
-	createArg := "--messaging-create-sms=number=" + phoneNumber + `,text="` + escaped + `"`
+	numEscaped := strings.ReplaceAll(phoneNumber, `"`, `\"`)
+	createArg := `--messaging-create-sms=number="` + numEscaped + `",text="` + escaped + `"`
 	out, stderr, err := run(30*time.Second, "mmcli", "-m", mmIndex, createArg)
 	if err != nil {
 		return false, stderr
@@ -309,16 +320,20 @@ func SendSMS(mmIndex, phoneNumber, text string) (bool, string) {
 		return false, "Could not find created SMS index"
 	}
 	smsIdx := m[1]
+	// 删除用 --messaging-delete-sms=<idx>；`-s <idx> --delete` 在 mmcli 1.20 会报
+	// "no actions specified"，导致删除静默失败、SMS 对象在 modem 存储里堆积，最终写满存储
+	// 使后续 create 失败。
+	delSMS := func() { run(30*time.Second, "mmcli", "-m", mmIndex, "--messaging-delete-sms="+smsIdx) }
 	_, stderr2, err2 := run(20*time.Second, "mmcli", "-m", mmIndex, "-s", smsIdx, "--send")
 	if err2 == errTimeout {
-		run(30*time.Second, "mmcli", "-m", mmIndex, "-s", smsIdx, "--delete")
+		delSMS()
 		return false, "发送超时：设备已注册但网络拒绝短信，请确认SIM卡已开通短信服务或VoLTE功能"
 	}
 	if err2 != nil {
-		run(30*time.Second, "mmcli", "-m", mmIndex, "-s", smsIdx, "--delete")
+		delSMS()
 		return false, stderr2
 	}
-	run(30*time.Second, "mmcli", "-m", mmIndex, "-s", smsIdx, "--delete")
+	delSMS()
 	return true, "sent"
 }
 
@@ -345,24 +360,32 @@ func ListInbox(mmIndex string) []InboxMessage {
 		if e != nil {
 			continue
 		}
+		// 同 getSimInfo：只声明关心的字符串字段，避免因未知字段类型不匹配导致整体解析失败。
 		var sd struct {
 			Sms struct {
-				Content    map[string]string `json:"content"`
-				Properties map[string]string `json:"properties"`
+				Content struct {
+					Number string `json:"number"`
+					Text   string `json:"text"`
+				} `json:"content"`
+				Properties struct {
+					PduType   string `json:"pdu-type"`
+					Timestamp string `json:"timestamp"`
+					State     string `json:"state"`
+				} `json:"properties"`
 			} `json:"sms"`
 		}
 		if json.Unmarshal([]byte(out2), &sd) != nil {
 			continue
 		}
-		if sd.Sms.Properties["pdu-type"] != "deliver" {
+		if sd.Sms.Properties.PduType != "deliver" {
 			continue
 		}
 		msgs = append(msgs, InboxMessage{
 			SmsIndex:    smsIdx,
-			PhoneNumber: sd.Sms.Content["number"],
-			Content:     sd.Sms.Content["text"],
-			Timestamp:   sd.Sms.Properties["timestamp"],
-			State:       sd.Sms.Properties["state"],
+			PhoneNumber: sd.Sms.Content.Number,
+			Content:     sd.Sms.Content.Text,
+			Timestamp:   sd.Sms.Properties.Timestamp,
+			State:       sd.Sms.Properties.State,
 		})
 	}
 	return msgs
@@ -386,6 +409,13 @@ func DeleteSmsFromModem(mmObjectPath, mmSmsIndex string) bool {
 // EnableModem enables a disabled modem.
 func EnableModem(mmIndex string) bool {
 	_, _, err := run(30*time.Second, "mmcli", "-m", mmIndex, "-e")
+	return err == nil
+}
+
+// ResetModem 对模块做硬件级复位（触发 USB 重新枚举）。
+// 用于换卡后模块固件卡在 sim-missing 等异常状态、仅重启 ModemManager 服务无法恢复的场景。
+func ResetModem(mmIndex string) bool {
+	_, _, err := run(30*time.Second, "mmcli", "-m", mmIndex, "--reset")
 	return err == nil
 }
 

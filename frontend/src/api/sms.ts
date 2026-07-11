@@ -4,6 +4,7 @@ export interface SmsMessage {
   id: number
   modem_id: number
   direction: 'inbound' | 'outbound'
+  channel: 'cellular' | 'vowifi'
   phone_number: string
   content: string
   status: 'pending' | 'sent' | 'failed' | 'received'

@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import clsx from 'clsx'
 import { useAuthStore } from '../store/authStore'
 import { Send, Trash2, RefreshCw, Bot, Paperclip, X } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, isToday, isYesterday } from 'date-fns'
+
+// iMessage 风格居中日期分隔（与消息中心一致）
+const TG_WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+function tgDaySep(iso: string): { date: string; time: string } {
+  const d = new Date(iso)
+  const time = format(d, 'HH:mm')
+  if (isToday(d)) return { date: '今天', time }
+  if (isYesterday(d)) return { date: '昨天', time }
+  return { date: `${format(d, 'M月d日')} ${TG_WEEK[d.getDay()]}`, time }
+}
 import {
   getTelegramMessagesApi, sendTelegramMessageApi, clearTelegramMessagesApi,
   getTelegramConfigApi, sendTelegramFileApi, type TelegramMessage, type TelegramConfig,
@@ -51,12 +62,36 @@ export default function TelegramAdmin() {
 
   useEffect(() => {
     if (autoRefresh) {
-      timerRef.current = setInterval(load, 5000)
+      timerRef.current = setInterval(load, 15000) // WS 已实时推送消息，轮询降为兜底 + 刷新 Bot 状态
     } else {
       if (timerRef.current) clearInterval(timerRef.current)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [autoRefresh])
+
+  // WebSocket 实时接收新的 Telegram 消息（收/发），无需等 5 秒轮询
+  useEffect(() => {
+    if (!token) return
+    let ws: WebSocket | null = null
+    let closed = false
+    const connect = () => {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
+      ws = new WebSocket(`${protocol}://${location.host}/ws/telegram?token=${token}`)
+      ws.onmessage = e => {
+        try {
+          const m = JSON.parse(e.data) as TelegramMessage
+          setMessages(prev => {
+            const i = prev.findIndex(x => x.id === m.id)
+            if (i >= 0) { const c = [...prev]; c[i] = { ...c[i], ...m }; return c }
+            return [...prev, m] // 新消息追加到末尾（升序，最新在底部）
+          })
+        } catch { /* ignore */ }
+      }
+      ws.onclose = () => { if (!closed) setTimeout(connect, 3000) }
+    }
+    connect()
+    return () => { closed = true; ws?.close() }
+  }, [token])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -153,12 +188,12 @@ export default function TelegramAdmin() {
   return (
     <div className="flex flex-col h-full gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Bot className="w-6 h-6 text-blue-400" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+          <Bot className="w-6 h-6 text-blue-400 shrink-0" />
           <h1 className="text-xl font-bold text-[var(--text-primary)]">Telegram 管理</h1>
           {config && (
-            <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-[var(--text-secondary)]">
               <StatusDot ok={config.bot_token_set} />
               <span>Bot {config.bot_token_set ? '已连接' : '未配置'}</span>
               <span className="text-[var(--border)]">·</span>
@@ -173,7 +208,7 @@ export default function TelegramAdmin() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
           <button
             onClick={() => setAutoRefresh(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
@@ -211,38 +246,40 @@ export default function TelegramAdmin() {
           ) : messages.length === 0 ? (
             <div className="text-center text-[var(--text-secondary)] py-12">暂无消息记录</div>
           ) : (
-            messages.map(msg => (
-              <div key={msg.id} className={`flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[70%] ${msg.direction === 'out' ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                    {msg.direction === 'in' && (
-                      <span className="font-medium">{msg.username || msg.chat_id}</span>
-                    )}
-                    <span>{format(new Date(msg.created_at), 'MM-dd HH:mm:ss')}</span>
-                    {msg.is_command && (
-                      <span className="bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded text-[10px]">命令</span>
-                    )}
-                  </div>
-                  <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${
-                    msg.direction === 'out'
-                      ? 'bg-blue-600 text-white rounded-br-sm'
-                      : 'bg-[var(--bg-main)] text-[var(--text-primary)] border border-[var(--border)] rounded-bl-sm'
-                  }`}>
-                    <MediaContent msg={msg} />
-                    {msg.file_type && msg.text && msg.text !== '[图片]' && msg.text !== '[视频]' && msg.text !== '[贴纸]' && msg.text !== '[语音]' && (
-                      <div className="mt-1 text-xs opacity-80">{renderText(msg.text)}</div>
-                    )}
-                    {!msg.file_type && renderText(msg.text)}
+            messages.map((msg, i) => {
+              const out = msg.direction === 'out'
+              const showTime = i === 0 || (+new Date(msg.created_at) - +new Date(messages[i - 1].created_at)) > 5 * 60 * 1000
+              return (
+                <div key={msg.id}>
+                  {showTime && (
+                    <div className="text-center text-[11px] text-gray-500 my-3">
+                      <span className="font-semibold text-gray-400">{tgDaySep(msg.created_at).date}</span> {tgDaySep(msg.created_at).time}
+                    </div>
+                  )}
+                  <div className={clsx('flex', out ? 'justify-end' : 'justify-start')}>
+                    <div className={clsx('max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words',
+                      out ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-100')}>
+                      <MediaContent msg={msg} />
+                      {msg.file_type && msg.text && msg.text !== '[图片]' && msg.text !== '[视频]' && msg.text !== '[贴纸]' && msg.text !== '[语音]' && (
+                        <div className="mt-1 text-xs opacity-80">{renderText(msg.text)}</div>
+                      )}
+                      {!msg.file_type && renderText(msg.text)}
+                      <div className={clsx('flex items-center gap-1.5 mt-1 text-[10px]', out ? 'text-blue-200/70 justify-end' : 'text-gray-400')}>
+                        {msg.direction === 'in' && <span className="font-medium">{msg.username || msg.chat_id}</span>}
+                        <span>{format(new Date(msg.created_at), 'HH:mm')}</span>
+                        {msg.is_command && <span className="bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded text-[9px]">命令</span>}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
-        <div className="border-t border-[var(--border)] p-3 flex flex-col gap-2">
+        {/* Input — 对齐消息中心：无顶部分隔线、圆形发光发送钮 */}
+        <div className="p-3 flex flex-col gap-2">
           {/* File preview */}
           {pendingFile && (
             <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-500/30 rounded-xl text-sm">
@@ -257,7 +294,7 @@ export default function TelegramAdmin() {
               </button>
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex items-end gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -267,7 +304,7 @@ export default function TelegramAdmin() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="self-end p-2 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] hover:text-blue-400 hover:border-blue-400 transition-colors"
+              className="shrink-0 w-9 h-9 flex items-center justify-center text-gray-400 hover:text-blue-400 rounded-full hover:bg-gray-700/50 transition-colors"
               title="发送图片/文件"
             >
               <Paperclip className="w-4 h-4" />
@@ -281,17 +318,16 @@ export default function TelegramAdmin() {
                   handleSend()
                 }
               }}
-              placeholder={pendingFile ? "添加说明文字（可选）…" : "输入消息发送到 Telegram… (Enter 发送，Shift+Enter 换行)"}
-              rows={2}
-              className="flex-1 bg-[var(--bg-main)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-secondary)] resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              placeholder={pendingFile ? '添加说明文字（可选）…' : '输入消息发送到 Telegram…'}
+              rows={1}
+              className="flex-1 resize-none bg-gray-800 border border-gray-600 rounded-xl px-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 max-h-32"
             />
             <button
               onClick={handleSend}
               disabled={sending || (!input.trim() && !pendingFile)}
-              className="self-end px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5"
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/50 disabled:opacity-70 transition-all"
             >
               <Send className="w-4 h-4" />
-              发送
             </button>
           </div>
         </div>

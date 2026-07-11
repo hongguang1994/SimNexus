@@ -103,6 +103,9 @@ CREATE TABLE IF NOT EXISTS modems (
     tx_bytes            INTEGER DEFAULT 0,
     rx_bytes            INTEGER DEFAULT 0,
     connection_duration INTEGER DEFAULT 0,       -- 连接累计秒数
+    vowifi_mode         NUMERIC DEFAULT 0,       -- 该卡是否走自建 VoWiFi 协议栈发短信
+    vowifi_epdg_ip      TEXT    DEFAULT '',      -- ePDG IPv4（留空用环境变量）
+    vowifi_at_port      TEXT    DEFAULT '',      -- AT 串口，如 /dev/ttyUSB2
     PRIMARY KEY (id),
     UNIQUE (mm_object_path),
     UNIQUE (imei)
@@ -200,6 +203,7 @@ CREATE TABLE IF NOT EXISTS sms_messages (
     created_by_id     INTEGER,
     scheduled_task_id INTEGER,
     direction         VARCHAR(8)  NOT NULL,  -- 'inbound' | 'outbound'
+    channel           VARCHAR(16) DEFAULT 'cellular', -- 'cellular'（蜂窝/mmcli）| 'vowifi'（自建 VoWiFi）
     phone_number      VARCHAR(30) NOT NULL,
     content           TEXT        NOT NULL,
     status            VARCHAR(8),            -- 'sent' | 'failed' | 'received'

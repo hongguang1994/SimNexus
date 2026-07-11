@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -26,7 +27,12 @@ type Config struct {
 	APN     string // 默认 ims
 	IMEI    string // DEVICE_IDENTITY 用
 	ATPort  string // 串口设备，如 /dev/ttyUSB2
-	Verbose bool
+	// USIM AKA 的 QMI 备选：配置了 QMIDevice（如 /dev/cdc-wdm0）则 AT 失败时回退到 QMI
+	// （qmicli 逻辑通道 + Send APDU）。USIMSlot 一般为 1。
+	QMIDevice string
+	USIMSlot  int
+	PreferQMI bool // true 时 USIM AKA 走 QMI 主、AT 备（env VOWIFI_AKA_ORDER=qmi）
+	Verbose   bool
 }
 
 func (c *Config) nai() string {
@@ -53,11 +59,33 @@ type Session struct {
 	// 最终 IKE_AUTH 拿到的结果
 	AssignedIPv6 []byte
 	PCSCFv6      [][]byte
-	spirChild    []byte
+	// IMS 注册 200 OK 的 P-Associated-URI 解析出的本机号码（MSISDN），如 +447902247547
+	MSISDN    string
+	spirChild []byte
 	// 子 SA（outer ESP）密钥
 	encrI, authI, encrR, authR []byte
 	espSeq                     uint32
 	imsSeq                     uint32
+	steps                      *Steps // 分步骤状态追踪（可空）
+
+	// 存活时间戳：收到任意内层 ESP 包 / MO 发送成功 / 周期心跳重注册成功 时刷新。
+	// 看门狗据此判断会话是否"悄悄死掉"需要重建。
+	aliveMu   sync.Mutex
+	lastAlive time.Time
+}
+
+// touch 刷新存活时间戳（有生命迹象时调用）。
+func (s *Session) touch() {
+	s.aliveMu.Lock()
+	s.lastAlive = time.Now()
+	s.aliveMu.Unlock()
+}
+
+// LastAlive 返回最近一次有生命迹象的时刻。
+func (s *Session) LastAlive() time.Time {
+	s.aliveMu.Lock()
+	defer s.aliveMu.Unlock()
+	return s.lastAlive
 }
 
 // NewSession 用给定配置创建一个 VoWiFi 会话（尚未建立连接，调用 Register 才开始握手）。
@@ -288,11 +316,16 @@ func (s *Session) recvSK(timeout float64, retries int, base float64) (byte, []by
 // Register 执行完整的 IKEv2+EAP-AKA 注册，成功后 Session 上带有 AssignedIPv6/PCSCFv6/child SA 密钥。
 func (s *Session) Register() error {
 	if err := s.dial(); err != nil {
+		s.step(StepIKEInit, StepFail, err.Error())
 		return err
 	}
+	s.step(StepIKEInit, StepRunning, "")
 	if err := s.ikeSAInit(); err != nil {
+		s.step(StepIKEInit, StepFail, err.Error())
 		return err
 	}
+	s.step(StepIKEInit, StepOK, "SPIr="+fmt.Sprintf("%x", s.spir))
+	s.step(StepEAPAKA, StepRunning, "")
 
 	// ---- IKE_AUTH #1: IDi + IDr(APN) + EAP_ONLY + CP + SA(ESP) + TS ----
 	spiChild := randBytes(4)
@@ -355,6 +388,7 @@ func (s *Session) Register() error {
 		}
 	}
 	if rand16 == nil || autn16 == nil {
+		s.step(StepEAPAKA, StepFail, "缺少 RAND/AUTN")
 		return fmt.Errorf("EAP-AKA Challenge 缺少 RAND/AUTN")
 	}
 	s.logf("EAP-AKA Challenge RAND=%x AUTN=%x", rand16, autn16)
@@ -364,8 +398,9 @@ func (s *Session) Register() error {
 	if aid == "" {
 		aid = "A0000000871002FF44FFFF8901010100"
 	}
-	aka, err := runUSIMAKA(s.cfg.ATPort, aid, rand16, autn16)
+	aka, err := s.usimAKA(aid, rand16, autn16)
 	if err != nil {
+		s.step(StepEAPAKA, StepFail, "USIM AKA: "+err.Error())
 		return fmt.Errorf("USIM AKA 失败: %w", err)
 	}
 	s.logf("SIM 认证成功 RES=%x", aka.RES)
@@ -419,6 +454,7 @@ func (s *Session) Register() error {
 	}
 	first, pt, err = s.recvSK(0, 5, 3)
 	if err != nil {
+		s.step(StepEAPAKA, StepFail, "等待 EAP-Success: "+err.Error())
 		return fmt.Errorf("等待 EAP-Success 失败: %w", err)
 	}
 	ipls = parsePayloads(first, pt)
@@ -429,26 +465,33 @@ func (s *Session) Register() error {
 		}
 	}
 	if !eapOK {
+		s.step(StepEAPAKA, StepFail, "未收到 EAP-Success")
 		return fmt.Errorf("未收到 EAP-Success")
 	}
 	s.logf("EAP-Success ✓")
+	s.step(StepEAPAKA, StepOK, "EAP-Success")
+	s.step(StepIKEAuth, StepRunning, "")
 
 	// ---- 最终 IKE_AUTH (mid=3) AUTH ----
 	macedID := prf(s.skPi, idRest(nai))
 	signed := append(append(append([]byte{}, s.initMsg...), s.Nr...), macedID...)
 	authData := prf(prf(msk, []byte("Key Pad for IKEv2")), signed)
 	if err := s.sendSK(authP(0, authData), 39, 3, 35); err != nil {
+		s.step(StepIKEAuth, StepFail, err.Error())
 		return err
 	}
 	first, pt, err = s.recvSK(0, 1, 20)
 	if err != nil {
+		s.step(StepIKEAuth, StepFail, "等待响应: "+err.Error())
 		return fmt.Errorf("等待最终 IKE_AUTH 响应失败: %w", err)
 	}
 	ipls = parsePayloads(first, pt)
 	s.parseFinalAuth(ipls)
 	if s.AssignedIPv6 == nil || s.spirChild == nil {
+		s.step(StepIKEAuth, StepFail, "无分配 IPv6/SPI（被 Notify 拒绝）")
 		return fmt.Errorf("最终 IKE_AUTH 缺少分配的 IPv6 或 ESP SPI（可能被 Notify 拒绝）")
 	}
+	s.step(StepIKEAuth, StepOK, fmt.Sprintf("IPv6=%x", s.AssignedIPv6))
 
 	// 派生子 SA（outer ESP）密钥：KEYMAT = prf+(SK_d, Ni|Nr)
 	keymat := prfPlus(s.skD, append(append([]byte{}, s.Ni...), s.Nr...), 32*4)

@@ -134,7 +134,7 @@ export default function Logs() {
             {connected ? t('logs_empty') : t('logs_connecting')}
           </div>
         ) : (
-          <table className="w-full border-collapse">
+          <div className="overflow-x-auto"><table className="w-full min-w-[640px] border-collapse">
             <tbody>
               {filtered.map((e, i) => {
                 const lv = (e.level || '').toUpperCase()
@@ -155,7 +155,7 @@ export default function Logs() {
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
         <div ref={bottomRef} />
       </div>

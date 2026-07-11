@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Search, MessageCircle, Send, Paperclip, Image, FileText, Download, Users, Clock, XCircle } from 'lucide-react'
+import { Search, MessageCircle, Send, Paperclip, Image, FileText, Download, Users, Clock, XCircle, ChevronLeft } from 'lucide-react'
 import clsx from 'clsx'
 import { format, isToday, isYesterday } from 'date-fns'
 import { useT } from '../i18n'
@@ -9,6 +9,7 @@ import {
   type SupportMessage, type Conversation,
 } from '../api/support'
 import { listUsersApi, type UserOut } from '../api/auth'
+import { useAuthStore } from '../store/authStore'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,16 @@ function fmtTime(iso: string, yesterday: string) {
   if (isToday(d)) return format(d, 'HH:mm')
   if (isYesterday(d)) return `${yesterday} ${format(d, 'HH:mm')}`
   return format(d, 'MM-dd HH:mm')
+}
+
+// iMessage 风格居中日期分隔：日期加粗 + 时间常规（与消息中心一致）
+const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+function daySep(iso: string): { date: string; time: string } {
+  const d = new Date(iso)
+  const time = format(d, 'HH:mm')
+  if (isToday(d)) return { date: '今天', time }
+  if (isYesterday(d)) return { date: '昨天', time }
+  return { date: `${format(d, 'M月d日')} ${WEEK[d.getDay()]}`, time }
 }
 
 // ── Attachment picker ─────────────────────────────────────────────────────────
@@ -137,7 +148,7 @@ function InputBar({ onSend, placeholder, t }: {
   }
 
   return (
-    <div className="border-t border-gray-700 shrink-0">
+    <div className="shrink-0">
       {/* Hidden file inputs — always mounted */}
       <input ref={imgRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
       <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} />
@@ -195,7 +206,7 @@ function InputBar({ onSend, placeholder, t }: {
         <button
           onClick={send}
           disabled={(!input.trim() && !pendingFile) || sending}
-          className="w-9 h-9 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors shrink-0">
+          className="w-9 h-9 bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/50 disabled:opacity-70 rounded-xl flex items-center justify-center transition-all shrink-0">
           {sending
             ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             : <Send className="w-4 h-4" />
@@ -222,6 +233,14 @@ export default function SupportAdmin() {
   const [msgs, setMsgs] = useState<SupportMessage[]>([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'unread' | 'replied'>('all')
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const on = () => setIsMobile(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const lastIdRef = useRef(0)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -232,7 +251,7 @@ export default function SupportAdmin() {
   useEffect(() => {
     loadConvs()
     listUsersApi().then(r => setAllUsers(r.data.filter(u => u.role !== 'admin')))
-    const timer = setInterval(loadConvs, 5000)
+    const timer = setInterval(loadConvs, 15000)
     return () => clearInterval(timer)
   }, [loadConvs])
 
@@ -252,9 +271,38 @@ export default function SupportAdmin() {
     if (!selected) return
     setMsgs([]); lastIdRef.current = 0
     loadMsgs(true)
-    const timer = setInterval(() => loadMsgs(false), 5000)
+    const timer = setInterval(() => loadMsgs(false), 15000)
     return () => clearInterval(timer)
   }, [loadMsgs, selected])
+
+  // WebSocket 实时接收客服消息（用户发来/客服回复），无需等 5 秒轮询
+  const token = useAuthStore(s => s.token)
+  const selectedRef = useRef(selected)
+  useEffect(() => { selectedRef.current = selected }, [selected])
+  useEffect(() => {
+    if (!token) return
+    let ws: WebSocket | null = null
+    let closed = false
+    const connect = () => {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
+      ws = new WebSocket(`${protocol}://${location.host}/ws/support?token=${token}`)
+      ws.onmessage = e => {
+        try {
+          const m = JSON.parse(e.data) as SupportMessage
+          const sel = selectedRef.current
+          if (sel && m.user_id === sel.user_id) {
+            setMsgs(prev => (prev.some(x => x.id === m.id) ? prev : [...prev, m]))
+            lastIdRef.current = Math.max(lastIdRef.current, m.id)
+            markReadApi(sel.user_id)
+          }
+          loadConvs() // 刷新左侧会话列表的未读/最新
+        } catch { /* ignore */ }
+      }
+      ws.onclose = () => { if (!closed) setTimeout(connect, 3000) }
+    }
+    connect()
+    return () => { closed = true; ws?.close() }
+  }, [token, loadConvs])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -285,13 +333,16 @@ export default function SupportAdmin() {
   const yesterday = t('sup_yesterday')
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+    <div className="flex h-full rounded-2xl overflow-hidden border border-gray-700/60 bg-gray-900/40">
 
-      {/* ── Left panel: user list ── */}
-      <div className="w-72 border-r border-gray-700 bg-gray-800 flex flex-col shrink-0">
+      {/* ── Left panel: user list（手机上选中用户后隐藏）── */}
+      <div className={clsx(
+        'w-full md:w-72 md:shrink-0 border-r border-gray-700/60 bg-gray-800/30 flex-col min-h-0',
+        isMobile && selected ? 'hidden' : 'flex'
+      )}>
 
         {/* Header */}
-        <div className="px-4 pt-4 pb-3 border-b border-gray-700 shrink-0">
+        <div className="px-4 pt-4 pb-3 border-b border-gray-700/60 shrink-0">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-white text-base flex items-center gap-2">
               <Users className="w-4 h-4 text-blue-400" />
@@ -317,7 +368,7 @@ export default function SupportAdmin() {
         </div>
 
         {/* Filter tabs */}
-        <div className="flex border-b border-gray-700 shrink-0">
+        <div className="flex border-b border-gray-700/60 shrink-0">
           {FILTERS.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
               className={clsx(
@@ -383,25 +434,27 @@ export default function SupportAdmin() {
         </div>
 
         {/* Footer stats */}
-        <div className="px-4 py-2.5 border-t border-gray-700 shrink-0 flex gap-4 text-xs text-gray-500">
+        <div className="px-4 py-2.5 border-t border-gray-700/60 shrink-0 flex gap-4 text-xs text-gray-500">
           <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {sidebar.length} {t('sup_users_count')}</span>
           <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {convs.length} {t('sup_conv_count')}</span>
         </div>
       </div>
 
-      {/* ── Right panel: chat ── */}
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-900">
+      {/* ── Right panel: chat（手机上未选用户时隐藏）── */}
+      <div className={clsx('flex-1 min-w-0 min-h-0 flex-col', isMobile && !selected ? 'hidden' : 'flex')}>
         {selected ? (
           <>
-            {/* Chat header */}
-            <div className="h-14 px-5 border-b border-gray-700 bg-gray-800 flex items-center gap-3 shrink-0">
-              <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+            {/* Chat header — 居中、无分隔线（对齐消息中心 iMessage 风格） */}
+            <div className="relative px-5 py-3 flex flex-col items-center gap-1 shrink-0">
+              <button onClick={() => setSelected(null)}
+                className="md:hidden absolute left-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-700/50">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold">
                 {selected.username[0].toUpperCase()}
               </div>
-              <div>
-                <p className="text-sm font-semibold text-white">{selected.username}</p>
-                <p className="text-xs text-gray-400">{t('sup_support_chat')}</p>
-              </div>
+              <p className="text-sm font-semibold text-white text-center">{selected.username}</p>
+              <p className="text-xs text-gray-400">{t('sup_support_chat')}</p>
             </div>
 
             {/* Messages */}
@@ -411,16 +464,24 @@ export default function SupportAdmin() {
                   <MessageCircle className="w-10 h-10 mb-2 opacity-25" />
                   <p className="text-sm">{t('sup_no_messages')}</p>
                 </div>
-              ) : msgs.map(msg => {
+              ) : msgs.map((msg, i) => {
                 const mine = !msg.is_from_user
+                const showTime = i === 0 || (+new Date(msg.created_at) - +new Date(msgs[i - 1].created_at)) > 5 * 60 * 1000
                 return (
-                  <div key={msg.id} className={clsx('flex items-end gap-2', mine ? 'justify-end' : 'justify-start')}>
-                    {!mine && (
-                      <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[11px] font-bold shrink-0 mb-4">
-                        {selected.username[0].toUpperCase()}
+                  <div key={msg.id}>
+                    {showTime && (
+                      <div className="text-center text-[11px] text-gray-500 my-3">
+                        <span className="font-semibold text-gray-400">{daySep(msg.created_at).date}</span> {daySep(msg.created_at).time}
                       </div>
                     )}
-                    <Bubble msg={msg} mine={mine} />
+                    <div className={clsx('flex items-end gap-2', mine ? 'justify-end' : 'justify-start')}>
+                      {!mine && (
+                        <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[11px] font-bold shrink-0 mb-4">
+                          {selected.username[0].toUpperCase()}
+                        </div>
+                      )}
+                      <Bubble msg={msg} mine={mine} />
+                    </div>
                   </div>
                 )
               })}

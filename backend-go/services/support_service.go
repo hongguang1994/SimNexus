@@ -83,6 +83,7 @@ func (s *SupportService) SendMessage(me *models.User, input SendMessageInput) (*
 	if err := s.db.Create(&msg).Error; err != nil {
 		return nil, err
 	}
+	BroadcastSupport(&msg) // WebSocket 实时推送给用户咨询页
 	return &msg, nil
 }
 

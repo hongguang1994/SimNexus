@@ -51,6 +51,10 @@ func main() {
 	services.StartScheduler()
 	go services.StartPolling(ctx)
 	go services.StartTelegramPolling(ctx)
+	// 为已开启 VoWiFi 模式的卡拉起常驻收发会话
+	go services.GetVowifiManager().StartEnabled()
+	// 看门狗：会话悄悄死掉时自动重建（带退避）
+	services.GetVowifiManager().StartWatchdog()
 
 	r := gin.New()
 	r.Use(gin.Recovery())

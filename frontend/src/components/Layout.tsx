@@ -244,7 +244,7 @@ function NavGroup({
     <div className="mb-0.5">
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-1.5 rounded-md text-xs font-medium text-blue-300/40 hover:text-blue-200/60 uppercase tracking-widest transition-colors"
+        className="w-full flex items-center justify-between px-3.5 py-1.5 rounded-full text-xs font-medium text-blue-300/40 hover:text-blue-200/60 uppercase tracking-widest transition-colors"
       >
         {label}
         <ChevronDown className={clsx('w-3 h-3 transition-transform duration-200 shrink-0', open && 'rotate-180')} />
@@ -310,6 +310,16 @@ export default function Layout() {
   const [showSupport, setShowSupport] = useState(false)
   const [supportUnread, setSupportUnread] = useState(0)
   const [sideCollapsed, setSideCollapsed] = useState(false)
+  const [mobileNav, setMobileNav] = useState(false) // 手机上侧边栏抽屉是否展开
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const on = () => { setIsMobile(mq.matches); if (mq.matches) setSideCollapsed(false) }
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  useEffect(() => { setMobileNav(false) }, [location.pathname]) // 切换路由后自动收起抽屉
   const [showNotif, setShowNotif] = useState(false)
   const [notifUnread, setNotifUnread] = useState(0)
   const [notifs, setNotifs] = useState<AppNotification[]>([])
@@ -380,12 +390,12 @@ export default function Layout() {
   const currentThemeOpt = THEME_OPTS.find(o => o.mode === mode)!
 
   const navLinkCls = ({ isActive }: { isActive: boolean }) =>
-    clsx('flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200',
+    clsx('flex items-center gap-3 px-3.5 py-2.5 rounded-full text-sm transition-all duration-200',
       sideCollapsed && 'justify-center px-0',
       isActive ? 'nav-active' : 'text-gray-400 hover:text-blue-200 hover:bg-blue-500/10')
 
   return (
-    <div className="layout-root min-h-screen flex flex-col">
+    <div className="layout-root h-[100dvh] flex flex-col p-2 md:p-3 gap-2 md:gap-3 overflow-hidden">
       {/* Ambient background orbs — hidden in light theme via CSS */}
       <div className="layout-orbs fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden>
         <div className="animate-orb absolute w-[600px] h-[600px] rounded-full opacity-30"
@@ -396,15 +406,15 @@ export default function Layout() {
           style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.3) 0%, transparent 70%)', top: '40%', right: '25%' }} />
       </div>
       {/* Top header */}
-      <header className="glass-strong border-b border-blue-500/10 h-14 flex items-center px-6 shrink-0 sticky top-0 z-40">
-        <div className="flex items-center gap-2 w-48 shrink-0">
+      <header className="glass-strong rounded-2xl border border-blue-500/10 shadow-xl shadow-black/20 h-14 flex items-center px-3 md:px-5 shrink-0 z-40">
+        <div className="flex items-center gap-2 md:w-48 shrink-0">
           <button
-            onClick={() => setSideCollapsed(c => !c)}
+            onClick={() => (isMobile ? setMobileNav(o => !o) : setSideCollapsed(c => !c))}
             className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700/60 transition-colors"
           >
-            {sideCollapsed
-              ? <PanelLeftOpen className="w-4 h-4" />
-              : <PanelLeftClose className="w-4 h-4" />
+            {(isMobile ? mobileNav : !sideCollapsed)
+              ? <PanelLeftClose className="w-4 h-4" />
+              : <PanelLeftOpen className="w-4 h-4" />
             }
           </button>
           <Cpu className="w-5 h-5 text-blue-400" />
@@ -489,10 +499,10 @@ export default function Layout() {
 
           {/* Language */}
           <Dropdown trigger={
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-gray-700/60 transition-colors">
+            <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-gray-700/60 transition-colors">
               <span className="text-base leading-none">{currentLang.flag}</span>
               <span className="hidden sm:block">{currentLang.label}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+              <ChevronDown className="w-3.5 h-3.5 text-gray-500 hidden sm:block" />
             </div>
           }>
             {LANG_OPTS.map(({ lang: l, flag, label }) => (
@@ -504,10 +514,10 @@ export default function Layout() {
 
           {/* Theme */}
           <Dropdown trigger={
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-gray-700/60 transition-colors">
+            <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-gray-700/60 transition-colors">
               <currentThemeOpt.icon className="w-4 h-4" />
               <span className="hidden sm:block">{t(currentThemeOpt.key)}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+              <ChevronDown className="w-3.5 h-3.5 text-gray-500 hidden sm:block" />
             </div>
           }>
             {THEME_OPTS.map(({ mode: m, icon: Icon, key }) => (
@@ -521,7 +531,7 @@ export default function Layout() {
 
           {/* User menu */}
           <Dropdown trigger={
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-gray-700/60 transition-colors">
+            <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:text-white hover:bg-gray-700/60 transition-colors">
               <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
                 {user?.username?.[0]?.toUpperCase()}
               </div>
@@ -535,7 +545,7 @@ export default function Layout() {
                     : t('nav_user')}
                 </p>
               </div>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+              <ChevronDown className="w-3.5 h-3.5 text-gray-500 hidden sm:block" />
             </div>
           }>
             {/* Header */}
@@ -581,10 +591,19 @@ export default function Layout() {
       </header>
 
       {/* Body */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 gap-2 md:gap-3">
+        {/* 手机上侧边栏抽屉的半透明背景遮罩 */}
+        {mobileNav && (
+          <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMobileNav(false)} />
+        )}
         <aside className={clsx(
-          'glass-strong border-r border-blue-500/10 flex flex-col py-4 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto overflow-x-hidden transition-all duration-200',
-          sideCollapsed ? 'w-14 px-1' : 'w-52 px-2'
+          'glass-strong rounded-2xl border border-blue-500/10 shadow-xl shadow-black/20 flex flex-col py-4 overflow-y-auto overflow-x-hidden transition-transform duration-200',
+          // 手机(<md)：固定定位的抽屉，按 mobileNav 滑入/滑出
+          'max-md:fixed max-md:inset-y-2 max-md:left-2 max-md:z-50 max-md:w-52 max-md:px-2',
+          mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-[130%]',
+          // 平板/桌面(>=md)：在流内、可折叠宽度
+          'md:shrink-0 md:h-full md:translate-x-0',
+          sideCollapsed ? 'md:w-14 md:px-1' : 'md:w-52 md:px-2'
         )}>
           <nav className="flex-1 space-y-1">
 
@@ -625,15 +644,9 @@ export default function Layout() {
             {/* ── 短信 ───────────────────────────────────── */}
             <NavGroup
               label={t('layout_group_sms')}
-              routes={['/send', '/templates', '/history', '/tasks', '/admin/tasks']}
+              routes={['/templates', '/history', '/tasks', '/admin/tasks']}
               sideCollapsed={sideCollapsed}
             >
-              {!p.read_only && (
-                <NavLink to="/send" className={navLinkCls} title={sideCollapsed ? t('nav_send') : undefined}>
-                  <Send className="w-4 h-4 shrink-0" />
-                  {!sideCollapsed && <span>{t('nav_send')}</span>}
-                </NavLink>
-              )}
               {!p.read_only && (
                 <NavLink to="/templates" className={navLinkCls} title={sideCollapsed ? t('layout_templates') : undefined}>
                   <FileText className="w-4 h-4 shrink-0" />
@@ -729,18 +742,18 @@ export default function Layout() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 min-w-0 overflow-auto">
           <Outlet />
         </main>
       </div>
 
 
-      {/* Floating right sidebar — hidden on full-page layouts */}
-      <div className={clsx('fixed right-4 bottom-8 z-30 flex flex-col gap-2.5', ['/support', '/admin/tasks', '/admin/telegram'].includes(location.pathname) && 'hidden')}>
+      {/* Floating right sidebar — 仅在总览页显示 */}
+      <div className={clsx('fixed right-4 bottom-8 z-30 flex flex-col gap-2.5', location.pathname !== '/' && 'hidden')}>
         <FloatBtn
           icon={Send}
-          label={t('nav_send')}
-          onClick={() => navigate('/send')}
+          label={t('nav_history')}
+          onClick={() => navigate('/history')}
           color="text-blue-400"
         />
         <FloatBtn

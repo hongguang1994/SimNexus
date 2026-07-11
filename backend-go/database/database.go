@@ -42,5 +42,23 @@ func Init(cfg *config.Config) {
 		&models.SupportMessage{},
 		&models.TelegramMessage{},
 	)
+
+	// AutoMigrate 是单次调用：靠前的 model 在 SQLite 上尝试改列会报错并中断整个链，
+	// 导致靠后 model 的新列加不上。这里对确实需要的新列显式补 ALTER（幂等，列已存在时忽略）。
+	ensureColumns(db)
+
 	slog.Info("database ready", "path", cfg.SQLitePath())
+}
+
+// ensureColumns 幂等地补齐 AutoMigrate 可能漏加的新列（SQLite ADD COLUMN，列已存在时报错忽略）。
+func ensureColumns(db *gorm.DB) {
+	alters := []string{
+		`ALTER TABLE sms_messages ADD COLUMN channel VARCHAR(16) DEFAULT 'cellular'`,
+		`ALTER TABLE modems ADD COLUMN vowifi_mode numeric DEFAULT 0`,
+		`ALTER TABLE modems ADD COLUMN vowifi_epdg_ip VARCHAR(64) DEFAULT ''`,
+		`ALTER TABLE modems ADD COLUMN vowifi_at_port VARCHAR(64) DEFAULT ''`,
+	}
+	for _, sql := range alters {
+		_ = db.Exec(sql).Error // 列已存在会报 "duplicate column name"，忽略即可
+	}
 }

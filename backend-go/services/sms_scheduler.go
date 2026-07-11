@@ -153,12 +153,19 @@ func ExecuteTask(taskID uint) {
 		mmIndex = m[1]
 	}
 
+	channel := models.SmsChannelCellular
+	if modem.VowifiMode {
+		channel = models.SmsChannelVowifi
+	}
 	recipients := []string(task.Recipients)
 	failCount := 0
 	for _, phone := range recipients {
 		var success bool
 		var message string
-		if isZte {
+		if modem.VowifiMode {
+			// VoWiFi 模式的卡已被独占，走常驻 VoWiFi 会话发送
+			success, message = GetVowifiManager().SendSMS(&modem, phone, task.Content)
+		} else if isZte {
 			success = ZteSendSMS(phone, task.Content)
 			if !success {
 				message = "ZTE send failed"
@@ -170,6 +177,7 @@ func ExecuteTask(taskID uint) {
 		sms := models.SmsMessage{
 			ModemID:         modem.ID,
 			Direction:       models.SmsOutbound,
+			Channel:         channel,
 			PhoneNumber:     phone,
 			Content:         task.Content,
 			Status:          models.SmsSent,
@@ -185,6 +193,7 @@ func ExecuteTask(taskID uint) {
 			failCount++
 		}
 		db.Create(&sms)
+		broadcastMessage(&sms) // WebSocket 实时推送
 	}
 
 	if failCount > 0 {

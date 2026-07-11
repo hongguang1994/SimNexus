@@ -6,6 +6,7 @@ import (
 
 	"simnexus-go/models"
 	"simnexus-go/security"
+	"simnexus-go/services/vowifi"
 
 	"gorm.io/gorm"
 )
@@ -32,9 +33,12 @@ func NewModemService(db *gorm.DB) *ModemService {
 // ModemDetail 设备详情，在 Modem 基础上附加短信统计数据。
 type ModemDetail struct {
 	models.Modem
-	SmsSent     int64 `json:"sms_sent"`     // 历史发出总条数
-	SmsReceived int64 `json:"sms_received"` // 历史收件总条数
-	SmsToday    int64 `json:"sms_today"`    // 今日收发合计条数
+	SmsSent       int64               `json:"sms_sent"`       // 历史发出总条数
+	SmsReceived   int64               `json:"sms_received"`   // 历史收件总条数
+	SmsToday      int64               `json:"sms_today"`      // 今日收发合计条数
+	VowifiRunning bool                `json:"vowifi_running"` // VoWiFi 常驻会话是否正在运行（已注册）
+	VowifiSteps   []vowifi.Step       `json:"vowifi_steps"`   // VoWiFi 通道建立的分步状态
+	VowifiInfo    *vowifi.SessionInfo `json:"vowifi_info"`    // VoWiFi 会话运行态（ePDG/隧道 IP/P-CSCF），未运行为 null
 }
 
 // ListAvailableModems 返回所有激活设备（不限权限，用于资源库页面）。
@@ -128,10 +132,13 @@ func (s *ModemService) GetModemDetail(id uint, u *models.User) (*ModemDetail, er
 	s.db.Model(&models.SmsMessage{}).
 		Where("modem_id = ? AND created_at >= ?", id, todayStart).Count(&today)
 	return &ModemDetail{
-		Modem:       modem,
-		SmsSent:     sent,
-		SmsReceived: received,
-		SmsToday:    today,
+		Modem:         modem,
+		SmsSent:       sent,
+		SmsReceived:   received,
+		SmsToday:      today,
+		VowifiRunning: vowifiMgr.IsRunning(id),
+		VowifiSteps:   vowifiMgr.StepsFor(id),
+		VowifiInfo:    vowifiMgr.InfoFor(id),
 	}, nil
 }
 

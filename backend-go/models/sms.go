@@ -16,6 +16,12 @@ const (
 	SmsReceived = "received" // 已收到（入站）
 )
 
+// 短信收发渠道常量。
+const (
+	SmsChannelCellular = "cellular" // 走 ModemManager/mmcli（蜂窝短信）
+	SmsChannelVowifi   = "vowifi"   // 走自建 VoWiFi 协议栈（IMS over Wi-Fi）
+)
+
 // 定时任务状态常量。
 const (
 	TaskActive    = "active"    // 运行中
@@ -29,8 +35,9 @@ const (
 type SmsMessage struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`
 	ModemID      uint       `gorm:"not null" json:"modem_id"`
-	Direction    string     `gorm:"size:16;not null" json:"direction"`    // inbound/outbound
-	PhoneNumber  string     `gorm:"size:30;not null" json:"phone_number"` // 对端号码
+	Direction    string     `gorm:"size:16;not null" json:"direction"`       // inbound/outbound
+	Channel      string     `gorm:"size:16;default:cellular" json:"channel"` // 收发渠道：cellular / vowifi
+	PhoneNumber  string     `gorm:"size:30;not null" json:"phone_number"`    // 对端号码
 	Content      string     `gorm:"type:text;not null" json:"content"`
 	Status       string     `gorm:"size:16;default:pending" json:"status"`
 	ErrorMessage *string    `gorm:"type:text" json:"error_message"` // 发送失败原因

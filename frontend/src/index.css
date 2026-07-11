@@ -180,6 +180,40 @@ html[data-theme="light"] .glass-strong { background: rgba(255,255,255,0.95) !imp
 html[data-theme="light"] .glow-blue   { box-shadow: 0 0 24px rgba(59,130,246,0.08) !important; }
 html[data-theme="light"] .bg-gray-900\/60 { background-color: rgba(240,244,255,0.9) !important; }
 html[data-theme="light"] .bg-gray-900\/20 { background-color: rgba(240,244,255,0.5) !important; }
+
+/* 卡片/面板/芯片的半透明底色：深色优先硬编码的 /xx 变体在浅色下必须变亮，
+   否则渲染成半透明深灰、文字虽变深也糊成一团（SIM 详情等所有卡片界面通病）。 */
+html[data-theme="light"] .bg-gray-900\/40,
+html[data-theme="light"] .bg-gray-900\/50 { background-color: rgba(255,255,255,0.55) !important; }
+html[data-theme="light"] .bg-gray-800\/30,
+html[data-theme="light"] .bg-gray-800\/40,
+html[data-theme="light"] .bg-gray-800\/60,
+html[data-theme="light"] .bg-gray-800\/80 { background-color: rgba(255,255,255,0.92) !important; }
+html[data-theme="light"] .bg-gray-700\/20,
+html[data-theme="light"] .bg-gray-700\/30,
+html[data-theme="light"] .bg-gray-700\/40,
+html[data-theme="light"] .bg-gray-700\/50,
+html[data-theme="light"] .bg-gray-700\/60 { background-color: rgba(226,232,240,0.7) !important; }
+html[data-theme="light"] .border-gray-700\/50,
+html[data-theme="light"] .border-gray-700\/60 { border-color: rgba(203,213,225,0.8) !important; }
+html[data-theme="light"] .border-gray-600\/30 { border-color: rgba(203,213,225,0.5) !important; }
+
+/* 同元素上 bg-blue/indigo + text-white 的按钮/气泡：全局 text-white→深色会把白字弄黑，
+   这里用无空格的复合选择器（同元素优先级更高）把它们的文字锁回白色。 */
+html[data-theme="light"] .bg-blue-600.text-white,
+html[data-theme="light"] .bg-blue-700.text-white,
+html[data-theme="light"] .bg-indigo-600.text-white { color: #ffffff !important; }
+
+/* 彩色标签/徽标（卡片标签等）用的 -300 文字色是给深色背景的，浅色下在淡色底上看不清，
+   统一压深到 -700 级别。 */
+html[data-theme="light"] .text-sky-300     { color: #0369a1 !important; }
+html[data-theme="light"] .text-emerald-300 { color: #047857 !important; }
+html[data-theme="light"] .text-violet-300  { color: #6d28d9 !important; }
+html[data-theme="light"] .text-amber-300   { color: #b45309 !important; }
+html[data-theme="light"] .text-rose-300    { color: #be123c !important; }
+html[data-theme="light"] .text-cyan-300    { color: #0e7490 !important; }
+html[data-theme="light"] .text-blue-300    { color: #1d4ed8 !important; }
+html[data-theme="light"] .text-blue-200    { color: #1e40af !important; }
 html[data-theme="light"] .bg-blue-600 { background-color: #2563eb !important; }
 html[data-theme="light"] .bg-blue-600 .text-white { color: #ffffff !important; }
 html[data-theme="light"] ::-webkit-scrollbar-track { background: #f0f4ff; }

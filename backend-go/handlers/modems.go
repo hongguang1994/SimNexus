@@ -152,6 +152,8 @@ func SetVowifiMode(c *gin.Context) {
 		Fail(c, http.StatusNotFound, 404, err.Error())
 		return
 	}
+	// 据最新模式启停该卡的常驻 VoWiFi 会话
+	go services.GetVowifiManager().SyncOne(modem)
 	OK(c, modem)
 }
 

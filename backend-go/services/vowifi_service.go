@@ -21,6 +21,11 @@ func NewVowifiService() *VowifiService { return &VowifiService{} }
 
 // buildConfig 从 modem 记录 + 环境变量兜底构造 vowifi.Config。
 func (v *VowifiService) buildConfig(m *models.Modem) (vowifi.Config, error) {
+	return buildVowifiConfig(m)
+}
+
+// buildVowifiConfig 从 modem 记录 + 环境变量兜底构造 vowifi.Config（供 VowifiManager 复用）。
+func buildVowifiConfig(m *models.Modem) (vowifi.Config, error) {
 	imsi := strings.TrimSpace(m.Imsi)
 	if imsi == "" {
 		return vowifi.Config{}, fmt.Errorf("该卡无 IMSI，无法建立 VoWiFi 会话")
@@ -39,15 +44,18 @@ func (v *VowifiService) buildConfig(m *models.Modem) (vowifi.Config, error) {
 	}
 	imei := vwFirstNonEmpty(m.Imei, os.Getenv("VOWIFI_IMEI"), "351263400674742")
 	return vowifi.Config{
-		EPDGIP:  epdg,
-		IMSI:    imsi,
-		MCC:     mcc,
-		MNC:     mnc,
-		USIMAID: vwFirstNonEmpty(os.Getenv("VOWIFI_USIM_AID"), "A0000000871002FF44FFFF8901010100"),
-		APN:     vwFirstNonEmpty(os.Getenv("VOWIFI_APN"), "ims"),
-		IMEI:    imei,
-		ATPort:  atPort,
-		Verbose: os.Getenv("VOWIFI_VERBOSE") != "",
+		EPDGIP:    epdg,
+		IMSI:      imsi,
+		MCC:       mcc,
+		MNC:       mnc,
+		USIMAID:   vwFirstNonEmpty(os.Getenv("VOWIFI_USIM_AID"), "A0000000871002FF44FFFF8901010100"),
+		APN:       vwFirstNonEmpty(os.Getenv("VOWIFI_APN"), "ims"),
+		IMEI:      imei,
+		ATPort:    atPort,
+		QMIDevice: vwFirstNonEmpty(os.Getenv("VOWIFI_QMI_DEV"), "/dev/cdc-wdm0"), // AT/QMI 互为兜底
+		USIMSlot:  1,
+		PreferQMI: strings.EqualFold(os.Getenv("VOWIFI_AKA_ORDER"), "qmi"), // QMI 主、AT 备
+		Verbose:   os.Getenv("VOWIFI_VERBOSE") != "",
 	}, nil
 }
 
@@ -71,7 +79,7 @@ func (v *VowifiService) SendSMS(m *models.Modem, phone, content string) (bool, s
 		defer startModemManager()
 		time.Sleep(2 * time.Second)
 	default:
-		release, ierr := inhibitModem(m.MmObjectPath)
+		release, ierr := inhibitModem(m.Imei, m.MmObjectPath)
 		if ierr != nil {
 			// inhibit 失败则兜底为全局停止，保证至少能独占
 			stopModemManager()
@@ -97,18 +105,37 @@ func (v *VowifiService) SendSMS(m *models.Modem, phone, content string) (bool, s
 
 // ---- helpers ----
 
-func stopModemManager() { exec.Command("systemctl", "stop", "ModemManager").Run() }
+func stopModemManager()  { exec.Command("systemctl", "stop", "ModemManager").Run() }
 func startModemManager() { exec.Command("systemctl", "start", "ModemManager").Run() }
+
+// resolveModemIndex 按 IMEI 在当前 ModemManager 里动态定位这张卡的 mmcli 索引。
+// modem 每次 USB 重新枚举或 MM 重启后索引都会变（Modem/0→7→…），DB 里的 mm_object_path
+// 很快过期；用过期索引去 inhibit 会打到别的/不存在的 modem，导致 MM 仍占着真卡的 AT 串口、
+// 抢读 CCHO 响应。这里优先按稳定的 IMEI 匹配，匹配不到再退回旧路径解析。
+func resolveModemIndex(imei, mmObjectPath string) string {
+	if imei != "" {
+		for _, mi := range ListModems() {
+			if mi.Imei == imei && mi.MmIndex != "" {
+				return mi.MmIndex
+			}
+		}
+	}
+	if m := reModemSvc.FindStringSubmatch(mmObjectPath); m != nil {
+		return m[1]
+	}
+	return ""
+}
 
 // inhibitModem 用 `mmcli -m <idx> --inhibit` 让 ModemManager 释放指定的这一张卡
 // （关闭其端口，使 AT 串口可被独占），返回的 release 函数结束抑制并交还给 MM。
 // mmcli --inhibit 会一直阻塞持有抑制，所以后台启动、发完后 kill 即恢复。
-func inhibitModem(mmObjectPath string) (func(), error) {
-	m := reModemSvc.FindStringSubmatch(mmObjectPath)
-	if m == nil {
-		return nil, fmt.Errorf("无法从 %s 解析 mmcli 索引", mmObjectPath)
+// 索引按 IMEI 动态解析，避免 DB 路径过期打到错误的 modem。
+func inhibitModem(imei, mmObjectPath string) (func(), error) {
+	idx := resolveModemIndex(imei, mmObjectPath)
+	if idx == "" {
+		return nil, fmt.Errorf("无法定位 modem（imei=%s path=%s）", imei, mmObjectPath)
 	}
-	cmd := exec.Command("mmcli", "-m", m[1], "--inhibit")
+	cmd := exec.Command("mmcli", "-m", idx, "--inhibit")
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动 mmcli --inhibit 失败: %w", err)
 	}

@@ -15,9 +15,10 @@ type Config struct {
 	SecretKey        string   // JWT 签名密钥，生产环境必须修改
 	ModemPollSeconds int      // 调制解调器轮询间隔（秒）
 	CorsOrigins      []string // 允许的 CORS 来源列表
-	TelegramBotToken string   // Telegram Bot Token
-	TelegramChatID   string   // Telegram 推送目标 Chat ID
-	UploadDir        string   // 文件上传存储目录
+	TelegramBotToken     string   // Telegram Bot Token
+	TelegramChatID       string   // Telegram 推送目标 Chat ID
+	TelegramAllowedChats []string // 允许发命令的 chat_id 白名单（含 TelegramChatID）；空则仅 TelegramChatID
+	UploadDir            string   // 文件上传存储目录
 }
 
 // C 是全局配置单例，由 Load() 初始化后可在任意包中访问。
@@ -49,6 +50,21 @@ func Load() *Config {
 		if o != "" {
 			cfg.CorsOrigins = append(cfg.CorsOrigins, o)
 		}
+	}
+
+	// Telegram 命令白名单：TELEGRAM_ALLOWED_CHAT_IDS（逗号分隔）+ 默认推送 chat_id。
+	// 只有白名单内的 chat 能对 Bot 发命令，防止任何人搜到 Bot 就能读短信/用卡发短信。
+	seen := map[string]bool{}
+	addChat := func(id string) {
+		id = strings.TrimSpace(id)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			cfg.TelegramAllowedChats = append(cfg.TelegramAllowedChats, id)
+		}
+	}
+	addChat(cfg.TelegramChatID)
+	for _, id := range strings.Split(getenv("TELEGRAM_ALLOWED_CHAT_IDS", ""), ",") {
+		addChat(id)
 	}
 
 	C = cfg

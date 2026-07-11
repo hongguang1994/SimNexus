@@ -237,7 +237,7 @@ export default function AdminTasks() {
 
       {/* Stat cards */}
       {stats && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <StatCard label={t('atask_stat_total')}     value={stats.total}     color="text-white" />
           <StatCard label={t('atask_stat_active')}    value={stats.active}    color="text-green-400" />
           <StatCard label={t('atask_stat_paused')}    value={stats.paused}    color="text-yellow-400" />
@@ -294,7 +294,7 @@ export default function AdminTasks() {
         ) : filtered.length === 0 ? (
           <div className="p-10 text-center text-gray-500 text-sm">{t('atask_empty')}</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm">
             <thead className="border-b border-gray-700 text-xs text-gray-400 uppercase tracking-wider">
               <tr>
                 <th className="px-3 py-3 w-8" />
@@ -314,7 +314,7 @@ export default function AdminTasks() {
                 <TaskRow key={task.id} task={task} onRefresh={load} t={t} />
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
     </div>

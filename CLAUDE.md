@@ -276,7 +276,7 @@ Bot 通过长轮询（`getUpdates`）接收消息，通过 `sendMessage` / `send
 ### Key constraints
 
 - The backend **must run on Linux** with ModemManager installed and the user in the `dialout` group. `mmcli` calls will fail on macOS or in Docker without host network + USB passthrough.
-- `Modem.mm_object_path` is the canonical unique key for a modem — do not use `device_path` or `imei` as a unique identifier (both can be absent or change).
+- **Modem identity = the SIM's `iccid`** (the printed SIM serial, follows the SIM across modules). The Go poller (`backend-go/services/modem_poller.go`) matches detected modems by `iccid` first (preferring `vowifi_mode` then most-recent when an iccid has duplicate rows), falling back to `mm_object_path` only when iccid is unreadable (sim-missing / ZTE has no iccid). Consequences: same SIM moved to a different EC25 module = same card (history/permissions/VoWiFi follow the SIM); a different SIM in the same module = a different card. Do **not** use `imei` (identifies the module, not the SIM) or `device_path` as the identity key. `mm_object_path` is still stored and used for the mmcli index regex and `zte:` routing, but it is no longer the identity key.
 - Inbound SMS deduplication uses `(modem_id, mm_sms_index, direction=inbound)` — `mm_sms_index` is the mmcli SMS object index, not a global ID.
 - Do **not** use `passlib` for password hashing — it fails on Python 3.13. Use `bcrypt` directly.
 - `rbac_roles` is loaded with `lazy="joined"` on `User`; always available after `get_current_user`. Access via `getattr(user, "rbac_roles", None)` in security helpers that may receive users loaded without the relationship.

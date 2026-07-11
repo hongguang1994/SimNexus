@@ -61,9 +61,11 @@ func TelegramSend(c *gin.Context) {
 		chatID = config.C.TelegramChatID
 	}
 	un := "SimNexus"
-	database.DB.Create(&models.TelegramMessage{
+	rec := &models.TelegramMessage{
 		ChatID: chatID, Username: &un, Direction: "out", Text: body.Text,
-	})
+	}
+	database.DB.Create(rec)
+	services.BroadcastTelegram(rec) // WebSocket 实时推送
 	OK(c, gin.H{"ok": true})
 }
 
@@ -107,10 +109,12 @@ func TelegramSendFile(c *gin.Context) {
 	un := "SimNexus"
 	ftCopy := fileType
 	fidCopy := fileID
-	database.DB.Create(&models.TelegramMessage{
+	rec := &models.TelegramMessage{
 		ChatID: config.C.TelegramChatID, Username: &un, Direction: "out",
 		Text: label, FileType: &ftCopy, FileID: &fidCopy,
-	})
+	}
+	database.DB.Create(rec)
+	services.BroadcastTelegram(rec) // WebSocket 实时推送
 	OK(c, gin.H{"ok": true})
 }
 

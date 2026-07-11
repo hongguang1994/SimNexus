@@ -27,6 +27,16 @@ var (
 	tgReModemArg   = regexp.MustCompile(`^#(\d+)`) // 匹配 /send #<id> 中的设备 ID
 )
 
+// tgChatAllowed 判断某 chat_id 是否在命令白名单内（fail-closed：白名单为空则拒绝所有）。
+func tgChatAllowed(chatID string) bool {
+	for _, id := range config.C.TelegramAllowedChats {
+		if id == chatID {
+			return true
+		}
+	}
+	return false
+}
+
 func tgToken() string   { return config.C.TelegramBotToken }
 func tgChatID() string  { return config.C.TelegramChatID }
 func tgBaseURL() string { return fmt.Sprintf("%s/bot%s", telegramAPIBase, tgToken()) }
@@ -79,10 +89,12 @@ func tgLog(chatID, username, direction, text string, isCmd bool, fileID, fileTyp
 	if fileType != "" {
 		ft = &fileType
 	}
-	database.DB.Create(&models.TelegramMessage{
+	rec := &models.TelegramMessage{
 		ChatID: chatID, Username: up, Direction: direction, Text: text,
 		IsCommand: isCmd, FileID: fid, FileType: ft, CreatedAt: time.Now(),
-	})
+	}
+	database.DB.Create(rec)
+	BroadcastTelegram(rec) // WebSocket 实时推送给 Telegram 页面
 }
 
 // modemLabel 返回设备展示名称，用于 Bot 消息中的设备标识。
@@ -102,9 +114,17 @@ func tgDoSend(m *models.Modem, number, content, chatID string) {
 	obj := m.MmObjectPath
 	var success bool
 	var errMsg string
-	if strings.HasPrefix(obj, "zte:") {
+	switch {
+	case m.VowifiMode:
+		// VoWiFi 模式的卡已被 mmcli --inhibit 独占，必须走常驻 VoWiFi 会话发送，
+		// 否则打到被独占的 mmcli 上必然失败（与网页/定时任务发送路径保持一致）。
+		success, errMsg = GetVowifiManager().SendSMS(m, number, content)
+	case strings.HasPrefix(obj, "zte:"):
 		success = ZteSendSMS(number, content)
-	} else {
+		if !success {
+			errMsg = "ZTE send failed"
+		}
+	default:
 		mm := reModemIdx.FindStringSubmatch(obj)
 		if mm == nil {
 			TelegramSendMessage("❌ 无法获取设备索引", chatID, true)
@@ -160,6 +180,13 @@ func tgHandle(msg *tgMessage) {
 	chatID := strconv.FormatInt(msg.Chat.ID, 10)
 	text := strings.TrimSpace(firstNonEmpty(msg.Text, msg.Caption))
 	username := tgUsername(msg.From)
+
+	// 授权校验：Bot 的用户名是公开可搜索的，任何人都能私聊它。若不校验发件人，陌生人就能
+	// 用 /list 读你的短信、用 /send 拿你的卡发短信。只处理白名单内 chat 的消息，其余忽略。
+	if !tgChatAllowed(chatID) {
+		slog.Warn("telegram: 忽略未授权 chat 的消息", "chat_id", chatID, "user", username, "text", text)
+		return
+	}
 
 	// media handling
 	if len(msg.Photo) > 0 {
