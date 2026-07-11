@@ -31,12 +31,13 @@ func vowifiVerbose() bool  { return os.Getenv("VOWIFI_VERBOSE") != "" }
 
 // VowifiManager 单例，持有所有常驻 VoWiFi 会话。
 type VowifiManager struct {
-	mu    sync.Mutex
-	cards map[uint]*vowifiCard
-	steps map[uint]*vowifi.Steps // 每卡最近一次通道建立的分步状态（成功/失败都保留供界面查看）
+	mu       sync.Mutex
+	cards    map[uint]*vowifiCard
+	steps    map[uint]*vowifi.Steps // 每卡最近一次通道建立的分步状态（成功/失败都保留供界面查看）
+	starting map[uint]bool          // 正在启动中的卡：防止并发 Start 抢占全局固定的本地 UDP 4500
 }
 
-var vowifiMgr = &VowifiManager{cards: map[uint]*vowifiCard{}, steps: map[uint]*vowifi.Steps{}}
+var vowifiMgr = &VowifiManager{cards: map[uint]*vowifiCard{}, steps: map[uint]*vowifi.Steps{}, starting: map[uint]bool{}}
 
 // StepsFor 返回某卡最近一次 VoWiFi 通道建立的分步状态快照（无则 nil）。
 func (m *VowifiManager) StepsFor(modemID uint) []vowifi.Step {
@@ -76,7 +77,17 @@ func (m *VowifiManager) Start(modem *models.Modem) error {
 		m.mu.Unlock()
 		return nil
 	}
+	if m.starting[modem.ID] {
+		m.mu.Unlock()
+		return nil // 已有启动尝试在进行，避免并发抢占本地 4500 端口
+	}
+	m.starting[modem.ID] = true
 	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		delete(m.starting, modem.ID)
+		m.mu.Unlock()
+	}()
 
 	// 新建一份步骤追踪，供界面显示通道建立到哪步、哪步失败（成功失败都保留）
 	steps := vowifi.NewSteps()
