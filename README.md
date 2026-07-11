@@ -8,7 +8,9 @@
 - **SIM 卡管理** — 列出所有 SIM 卡的网络状态、信号强度、网络制式（5G/4G/3G）、注册状态、运营商、流量统计、在线时长、短信统计
 - **多卡监控** — 同时管理多个 USB 4G 调制解调器，自动识别热插拔
 - **ZTE 随身 WiFi 支持** — 通过 HTTP goform API 管理 ZTE 随身 WiFi（无需 mmcli），自动发现、状态轮询、短信收发，IMSI 推断运营商名称
-- **实时推送** — WebSocket 每 5 秒推送设备状态、信号强度、运营商信息
+- **VoWiFi / Wi-Fi Calling** — 自建 IKEv2/EAP-AKA + IMS 协议栈，让漫游中被拒的 SIM（如 giffgaff 漫游中国移动）**经 ePDG 走 Wi-Fi 收发短信**；按卡开关，独占该卡串口，MT 收信自动回 RP-ACK、MO 发送批量摊薄鉴权、心跳看门狗自愈
+- **实时推送** — 设备状态经 WebSocket 每 5 秒刷新；**短信 / 客服 / Telegram 三个消息界面为 WebSocket 即时推送**（收发秒级到达，轮询仅作兜底）
+- **卡身份按 ICCID 识别** — 以 SIM 的 ICCID 为主键：同卡换模组仍是同一张卡，同模组换卡则视为新卡
 - **手动发送** — 选定 SIM 卡后立即发送短信，支持从模板选择内容
 - **短信模板** — 创建可复用模板，支持 `{变量名}` 占位符，发送时逐一填写变量值并实时预览
 - **收件同步** — 自动拉取各设备收件箱并入库，按 `mm_sms_index` 去重
@@ -32,74 +34,78 @@
 
 ### 管理功能
 - **任务监控** — 管理员专属页面，查看所有用户的定时任务、执行统计（运行中/已暂停/已完成/失败）、历史记录
-- **短信记录** — 支持点击内容展开全文弹窗、一键复制（HTTP 环境兼容）
-- **用户咨询** — 用户与客服/管理员实时聊天，支持文字、图片、文件附件
-- **多语言** — 中文 / 英文切换
-- **主题** — 浅色 / 深色 / 跟随系统
+- **消息中心** — iMessage 风格的短信收发界面，按（卡 + 对端号码）分会话、多卡筛选、乐观发送、WebSocket 实时到达
+- **用户咨询** — 用户与客服/管理员实时聊天（WebSocket），支持文字、图片、文件附件
+- **Telegram 机器人** — 收到短信自动推送到 Telegram；在 Telegram 里用 `/modems`、`/send #<卡ID> <号码> <内容>`、`/list` 远程收发短信；**chat_id 白名单鉴权**，非授权用户发任何消息一律忽略
+- **响应式 + 主题** — 适配手机 / 平板 / 桌面；浅色 / 深色 / 跟随系统；中文 / 英文
 
 ---
 
 ## 系统要求
 
 - Debian 11 / 12（或 Ubuntu 20.04+）
-- Python 3.10+
-- Node.js 18+
-- ModemManager 1.18+
-- USB 4G 模块（SIM7600、EC25 等主流模组）或 ZTE 随身 WiFi（CDC Ethernet 模式）
+- Docker Engine + Docker Compose v2（**推荐部署方式**）
+- 宿主机安装并运行 ModemManager 1.18+（供容器内 mmcli 使用）
+- USB 4G 模块（EC25、SIM7600 等主流模组）或 ZTE 随身 WiFi（CDC Ethernet 模式）
+- 后端为 **Go**（`backend-go/`）、前端为 React + Vite；本地开发另需 Go 1.22+ 与 Node.js 18+
+
+> 后端已由早期的 Python/FastAPI 迁移为 Go。生产部署走 Docker，无需在宿主机装 Go/Python。
 
 ---
 
 ## 快速开始
 
-### 1. 克隆项目
+### 一键部署（推荐）
+
+在装好 Docker 的宿主机上：
 
 ```bash
 git clone https://github.com/hongguang1994/SimNexus.git
 cd SimNexus
+./deploy.sh
 ```
 
-### 2. 初始化系统环境
+`deploy.sh` 会自动完成：环境检查 → 生成 `.env`（密钥不入库）→ **首次部署导入初始数据（账号 `admin` / `admin123`）** → 构建并启动前后端容器。完成后访问 `http://<服务器IP>:8899`。
+
+> **密钥配置**：`.env` 由 `.env.example` 生成，`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` 按需填写（留空则禁用 Telegram），`.env` 已被 `.gitignore` 忽略，不会提交。
+
+### 手动步骤（等价于一键脚本）
+
+```bash
+cp .env.example .env          # 填入 Telegram 等密钥（可留空）
+sqlite3 data/sim_manager.db < docs/schema.sql   # 仅首次：导入初始数据
+docker compose up -d --build
+```
+
+### 本地开发环境（非 Docker）
+
+先安装系统依赖（ModemManager、udev 规则、dialout 组）：
 
 ```bash
 sudo bash scripts/setup-debian.sh
 ```
 
-该脚本会自动完成：
-- 安装 ModemManager 及系统依赖
-- 配置 udev 热插拔规则
-- 将当前用户加入 `dialout` 组
-- 创建 Python 虚拟环境并安装依赖
-- 安装前端 npm 依赖
-
-> 安装完成后需重新登录，使串口访问权限生效。
-
-### 3. 启动服务
-
-**后端**
+**后端（Go）**
 
 ```bash
-cd backend
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd backend-go
+sqlite3 ./data/sim_manager.db < ../docs/schema.sql   # 仅首次：导入初始数据
+go run .                                              # 监听 :8000
 ```
 
-首次启动会自动创建所有数据表。**初始数据（管理员账号 + 系统角色）需手动导入**：
-
-```bash
-sqlite3 data/sim_manager.db < docs/schema.sql
-```
-
-默认管理员账号：`admin` / `admin123`（请登录后立即修改密码）
+默认管理员账号：`admin` / `admin123`（请登录后立即修改密码）。
 
 **前端**（新终端）
 
 ```bash
 cd frontend
-npm run dev
+npm install
+npm run dev                                           # http://localhost:5173，已代理 /api、/ws 到 :8000
 ```
 
-访问 [http://localhost:5173](http://localhost:5173)
+---
 
-### 4. Docker 部署（Linux 宿主机，推荐）
+## Docker 部署细节
 
 **前提条件**
 
@@ -126,7 +132,7 @@ cd SimNexus
 docker compose up -d
 ```
 
-首次启动会自动构建镜像（约 2–3 分钟），之后访问 `http://<服务器IP>`。
+首次启动会自动构建镜像（约 2–3 分钟），之后访问 `http://<服务器IP>:8899`。
 
 **网络架构**
 

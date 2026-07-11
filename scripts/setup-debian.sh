@@ -1,6 +1,8 @@
 #!/bin/bash
-# Debian 环境初始化脚本
-# 运行: sudo bash scripts/setup-debian.sh
+# Debian/Ubuntu 系统依赖初始化（供本地开发或 Docker 宿主机使用）
+#   运行: sudo bash scripts/setup-debian.sh
+# 说明: 只装系统级依赖（ModemManager / udev / dialout / sqlite3）。后端为 Go、前端为 Node，
+#       生产部署请直接用根目录的 ./deploy.sh（Docker）。
 
 set -e
 
@@ -10,8 +12,7 @@ apt-get install -y \
     modemmanager \
     libdbus-1-dev \
     libglib2.0-dev \
-    python3 python3-pip python3-venv \
-    nodejs npm \
+    sqlite3 \
     udev
 
 echo "=== 启动 ModemManager 服务 ==="
@@ -28,20 +29,11 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="*", ENV{ID_MM_CANDIDATE}="1", TAG+="systemd"
 EOF
 udevadm control --reload-rules
 
-echo "=== 后端 Python 环境 ==="
-cd "$(dirname "$0")/.."
-python3 -m venv backend/.venv
-backend/.venv/bin/pip install -r backend/requirements.txt
-
-echo "=== 前端依赖 ==="
-cd frontend
-npm install
-cd ..
-
 echo ""
-echo "✅ 安装完成！"
+echo "✅ 系统依赖已就绪！"
 echo ""
-echo "启动后端:  cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000"
-echo "启动前端:  cd frontend && npm run dev"
+echo "本地开发（Go）:   cd backend-go && go run ."
+echo "本地开发（前端）: cd frontend && npm install && npm run dev"
+echo "生产部署（Docker）: ./deploy.sh"
 echo ""
 echo "⚠️  请重新登录以使 dialout 组权限生效"
