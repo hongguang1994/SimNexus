@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 // TCP 标志位
@@ -474,6 +475,74 @@ func buildSMSSubmitTPDU(destE164, text string, mr byte) []byte {
 	return append(tpdu, ud...)
 }
 
+// gsm7Encodable 判断文本是否可用基础 GSM7（这里从简：全为 ASCII 即可）；否则走 UCS2。
+func gsm7Encodable(s string) bool {
+	for _, r := range s {
+		if r > 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// ucs2Units 把文本编成 UTF-16 码元序列（UCS2 短信即 UTF-16BE）。
+func ucs2Units(s string) []uint16 { return utf16.Encode([]rune(s)) }
+
+func ucs2Bytes(u []uint16) []byte {
+	b := make([]byte, 0, len(u)*2)
+	for _, c := range u {
+		b = append(b, byte(c>>8), byte(c))
+	}
+	return b
+}
+
+// buildSubmitTPDUs 把一条 MO 文本编码成一或多条 SMS-SUBMIT TPDU：
+//   - 纯 ASCII 且 ≤160 → 单条 GSM7；
+//   - 中文/其它 且 ≤70 → 单条 UCS2；
+//   - 超长 → UCS2 多段（每段 67 码元 + 6 字节 UDH concat 头，TP-UDHI 置位，共享 ref）。
+// 用 UCS2 处理所有多段场景，避免 GSM7+UDH 的 7bit 位对齐坑；ref/total/seq 写在 TPDU 里。
+func buildSubmitTPDUs(destE164, text string) [][]byte {
+	digits := strings.TrimPrefix(destE164, "+")
+	da := append([]byte{byte(len(digits)), 0x91}, bcdSwap(digits)...)
+	mk := func(firstOctet, dcs byte, udl int, ud []byte) []byte {
+		t := append([]byte{firstOctet, randBytes(1)[0]}, da...) // TP-MTI=SUBMIT, TP-MR 随机
+		t = append(t, 0x00, dcs, byte(udl))                     // TP-PID=00, TP-DCS, TP-UDL
+		return append(t, ud...)
+	}
+	if gsm7Encodable(text) && len([]rune(text)) <= 160 {
+		ud, udl := gsm7Pack(text)
+		return [][]byte{mk(0x01, 0x00, udl, ud)}
+	}
+	units := ucs2Units(text)
+	if len(units) <= 70 {
+		ud := ucs2Bytes(units)
+		return [][]byte{mk(0x01, 0x08, len(ud), ud)} // DCS=0x08 UCS2, UDL=字节数
+	}
+	// UCS2 多段
+	var chunks [][]uint16
+	for i := 0; i < len(units); {
+		end := i + 67
+		if end > len(units) {
+			end = len(units)
+		}
+		// 不要把代理对(emoji)从中间切开
+		if end < len(units) && units[end-1] >= 0xD800 && units[end-1] <= 0xDBFF {
+			end--
+		}
+		chunks = append(chunks, units[i:end])
+		i = end
+	}
+	ref := randBytes(1)[0]
+	total := byte(len(chunks))
+	out := make([][]byte, 0, len(chunks))
+	for seq, ch := range chunks {
+		udh := []byte{0x05, 0x00, 0x03, ref, total, byte(seq + 1)} // UDHL=05, IEI=00(8bit concat), len=03
+		ud := append(udh, ucs2Bytes(ch)...)
+		out = append(out, mk(0x41, 0x08, len(ud), ud)) // 0x41=SUBMIT|UDHI, UDL=UD 字节数(含UDH)
+	}
+	return out
+}
+
 func buildRPDataMO(smscE164 string, tpdu []byte, rpMR byte) []byte {
 	digits := strings.TrimPrefix(smscE164, "+")
 	bcd := bcdSwap(digits)
@@ -674,11 +743,27 @@ func (s *Session) buildSubscribeReg(rc *regContext) []byte {
 
 var reAssocURI = regexp.MustCompile(`<sip:(\+[^>;]+)>`)
 
-// buildMOMessage 构造一条 MO 短信 MESSAGE（body=RP-DATA(SUBMIT)），CSeq 递增。
-// srcPort 是本条 MESSAGE 所用 TCP 连接的源端口，必须与实际发送端口一致（Via rport）。
+// buildMOMessages 把一条（可能很长/含中文的）MO 短信编码成一条或多条 MESSAGE：
+// 纯 ASCII 且 ≤160 字符 → 单条 GSM7；否则(中文/超长) → UCS2，>70 字符再按 concat(UDH) 拆分。
+// 每段各自成一条 SIP MESSAGE（各自 CSeq 递增），由调用方在同一连接上依次发出。
+func (s *Session) buildMOMessages(rc *regContext, to, text, smsc string, srcPort uint16) [][]byte {
+	tpdus := buildSubmitTPDUs(to, text)
+	out := make([][]byte, 0, len(tpdus))
+	for _, tpdu := range tpdus {
+		rpdu := buildRPDataMO(smsc, tpdu, randBytes(1)[0])
+		out = append(out, s.wrapMOMessage(rc, smsc, rpdu, srcPort))
+	}
+	return out
+}
+
+// buildMOMessage 单条便捷封装（一次性 SendSMS 用；长文本只取第一段）。
 func (s *Session) buildMOMessage(rc *regContext, to, text, smsc string, srcPort uint16) []byte {
-	tpdu := buildSMSSubmitTPDU(to, text, 1)
-	rpdu := buildRPDataMO(smsc, tpdu, randBytes(1)[0])
+	return s.buildMOMessages(rc, to, text, smsc, srcPort)[0]
+}
+
+// wrapMOMessage 把给定 RP-DATA 包成一条 MO SIP MESSAGE（CSeq 递增）。
+// srcPort 是本条 MESSAGE 所用 TCP 连接的源端口，必须与实际发送端口一致（Via rport）。
+func (s *Session) wrapMOMessage(rc *regContext, smsc string, rpdu []byte, srcPort uint16) []byte {
 	rc.cseq++
 	srcStr := ipv6Bracket(s.AssignedIPv6)
 	var mb strings.Builder

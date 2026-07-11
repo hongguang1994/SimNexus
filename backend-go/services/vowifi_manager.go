@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -268,8 +269,68 @@ func (m *VowifiManager) StartEnabled() {
 	}
 }
 
-// ingestVowifiInbound 把一条 MT 短信入库并触发推送（对齐 poller 的 ingestInbox）。
+// ── 长短信(concat)重组缓冲：按 (卡, 发件人, ref) 收集各段，齐了或超时再拼接入库 ──
+type reasmBuf struct {
+	modemID uint
+	sender  string
+	total   int
+	parts   map[int]string
+	first   time.Time
+}
+
+func (b *reasmBuf) join() string {
+	var s strings.Builder
+	for i := 1; i <= b.total; i++ {
+		s.WriteString(b.parts[i]) // 缺段则为空，缺一段总比全丢好
+	}
+	return s.String()
+}
+
+type reasmKey struct {
+	modemID uint
+	sender  string
+	ref     int
+}
+
+var (
+	reasmMu sync.Mutex
+	reasm   = map[reasmKey]*reasmBuf{}
+)
+
+// ingestVowifiInbound 处理一段 MT：单段直接入库；多段(长短信)先缓冲，拼齐或超时再入库。
 func ingestVowifiInbound(modemID uint, sms vowifi.InboundSMS) {
+	if sms.Total <= 1 {
+		ingestVowifiFinal(modemID, sms.Sender, sms.Text)
+		return
+	}
+	key := reasmKey{modemID, sms.Sender, sms.Ref}
+	var ready []*reasmBuf
+	reasmMu.Lock()
+	buf := reasm[key]
+	if buf == nil {
+		buf = &reasmBuf{modemID: modemID, sender: sms.Sender, total: sms.Total, parts: map[int]string{}, first: time.Now()}
+		reasm[key] = buf
+	}
+	buf.parts[sms.Seq] = sms.Text
+	if len(buf.parts) >= buf.total {
+		ready = append(ready, buf)
+		delete(reasm, key)
+	}
+	// 清理超时(>2min)仍未拼齐的：有几段拼几段，避免永远卡住
+	for k, b := range reasm {
+		if time.Since(b.first) > 2*time.Minute {
+			ready = append(ready, b)
+			delete(reasm, k)
+		}
+	}
+	reasmMu.Unlock()
+	for _, b := range ready {
+		ingestVowifiFinal(b.modemID, b.sender, b.join())
+	}
+}
+
+// ingestVowifiFinal 把一条(已拼接完整的) MT 短信入库并触发推送（对齐 poller 的 ingestInbox）。
+func ingestVowifiFinal(modemID uint, sender, text string) {
 	db := database.DB
 	var modem models.Modem
 	if db.First(&modem, modemID).Error != nil {
@@ -280,7 +341,7 @@ func ingestVowifiInbound(modemID uint, sms vowifi.InboundSMS) {
 	// 只入库一次，避免界面被重复短信刷屏。正常场景验证码内容各不相同，不会误伤。
 	var existing models.SmsMessage
 	if db.Where("modem_id = ? AND direction = ? AND channel = ? AND phone_number = ? AND content = ? AND received_at > ?",
-		modemID, models.SmsInbound, models.SmsChannelVowifi, sms.Sender, sms.Text, now.Add(-10*time.Minute)).
+		modemID, models.SmsInbound, models.SmsChannelVowifi, sender, text, now.Add(-10*time.Minute)).
 		First(&existing).Error == nil {
 		return
 	}
@@ -288,8 +349,8 @@ func ingestVowifiInbound(modemID uint, sms vowifi.InboundSMS) {
 		ModemID:     modemID,
 		Direction:   models.SmsInbound,
 		Channel:     models.SmsChannelVowifi,
-		PhoneNumber: sms.Sender,
-		Content:     sms.Text,
+		PhoneNumber: sender,
+		Content:     text,
 		Status:      models.SmsReceived,
 		ReceivedAt:  &now,
 	}
@@ -302,5 +363,5 @@ func ingestVowifiInbound(modemID uint, sms vowifi.InboundSMS) {
 	if label == "" {
 		label = fmt.Sprintf("设备#%d", modemID)
 	}
-	go TelegramPushInboundSMS(label, sms.Sender, sms.Text)
+	go TelegramPushInboundSMS(label, sender, text)
 }

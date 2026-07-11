@@ -17,11 +17,47 @@ import (
 	"time"
 )
 
-// InboundSMS 是解码后的一条 MT 短信。
+// InboundSMS 是解码后的一条 MT 短信（可能是长短信的一段）。
 type InboundSMS struct {
 	Sender string
 	Text   string
 	Raw    []byte // 原始 RPDU，便于排错
+	// 长短信 concat 信息（来自 UDH）：Total<=1 表示单段；否则上层按 (Sender,Ref) 缓冲拼接。
+	Ref   int
+	Total int
+	Seq   int
+}
+
+// parseUDHConcat 从用户数据的 UDH 里取出 concat 信息 (ref,total,seq)；无 concat 头则返回 (0,1,1)。
+func parseUDHConcat(ud []byte) (ref, total, seq int) {
+	if len(ud) == 0 {
+		return 0, 1, 1
+	}
+	udhl := int(ud[0])
+	if udhl == 0 || 1+udhl > len(ud) {
+		return 0, 1, 1
+	}
+	h := ud[1 : 1+udhl]
+	for i := 0; i+1 < len(h); {
+		iei := h[i]
+		iedl := int(h[i+1])
+		if i+2+iedl > len(h) {
+			break
+		}
+		d := h[i+2 : i+2+iedl]
+		switch iei {
+		case 0x00: // 8-bit ref concat
+			if len(d) >= 3 {
+				return int(d[0]), int(d[1]), int(d[2])
+			}
+		case 0x08: // 16-bit ref concat
+			if len(d) >= 4 {
+				return int(d[0])<<8 | int(d[1]), int(d[2]), int(d[3])
+			}
+		}
+		i += 2 + iedl
+	}
+	return 0, 1, 1
 }
 
 // RunReceiver 常驻运行：keepalive + 到期前重注册 + 监听处理 MT 短信 + 处理 MO 发送请求。
@@ -79,40 +115,50 @@ func (s *Session) RunReceiver(rc *regContext, stop <-chan struct{}, sendCh <-cha
 			sentOnConn := 0
 			for i := range batch {
 				b := batch[i]
-				resp, nc := s.tcpSendOnConn(rc.conn, s.buildMOMessage(rc, b.to, b.text, b.smsc, rc.id.uePortC))
-				if nc != nil {
-					rc.conn = nc
-				}
-				if resp == "" && i > 0 {
-					// 连接可能已被 P-CSCF FIN（本批已发出 sentOnConn 条后关闭），重注册续发这一条
-					s.logf("[tx] 批量连发第%d条无响应（本连接已发%d条），重注册续发", i+1, sentOnConn)
-					if nrc2, rerr2 := s.imsRegister(false, rc); rerr2 == nil {
-						*rc = *nrc2
-						srv = map[uint16]*srvConn{}
-						sentOnConn = 0
-						resp, nc = s.tcpSendOnConn(rc.conn, s.buildMOMessage(rc, b.to, b.text, b.smsc, rc.id.uePortC))
-						if nc != nil {
-							rc.conn = nc
+				// 一条短信可能被编码成多段（长文本/中文 UCS2 concat），逐段在同一连接上发出。
+				tpdus := buildSubmitTPDUs(b.to, b.text)
+				reqCode := 0
+				var reqErr error
+				for pi := 0; pi < len(tpdus); pi++ {
+					msg := s.wrapMOMessage(rc, b.smsc, buildRPDataMO(b.smsc, tpdus[pi], randBytes(1)[0]), rc.id.uePortC)
+					resp, nc := s.tcpSendOnConn(rc.conn, msg)
+					if nc != nil {
+						rc.conn = nc
+					}
+					if resp == "" && sentOnConn > 0 {
+						// 连接被 P-CSCF FIN（本连接已发 sentOnConn 段），重注册续发这一段
+						s.logf("[tx] 分段发送无响应（本连接已发%d段），重注册续发", sentOnConn)
+						if nrc2, rerr2 := s.imsRegister(false, rc); rerr2 == nil {
+							*rc = *nrc2
+							srv = map[uint16]*srvConn{}
+							sentOnConn = 0
+							msg = s.wrapMOMessage(rc, b.smsc, buildRPDataMO(b.smsc, tpdus[pi], randBytes(1)[0]), rc.id.uePortC)
+							resp, nc = s.tcpSendOnConn(rc.conn, msg)
+							if nc != nil {
+								rc.conn = nc
+							}
+						} else {
+							reqErr = fmt.Errorf("发前重注册失败: %w", rerr2)
+							break
 						}
-					} else {
-						b.resp <- sendResp{err: fmt.Errorf("发前重注册失败: %w", rerr2)}
-						continue
 					}
-				}
-				code := 0
-				var err error
-				if resp == "" {
-					err = fmt.Errorf("MESSAGE 无响应")
-				} else {
-					code, _ = parseSIPResponse(resp)
+					if resp == "" {
+						reqErr = fmt.Errorf("MESSAGE 无响应")
+						break
+					}
+					code, _ := parseSIPResponse(resp)
+					reqCode = code
 					if code != 200 && code != 202 {
-						err = fmt.Errorf("MESSAGE 被拒 code=%d", code)
-					} else {
-						sentOnConn++
-						s.touch() // MO 拿到 202：会话活着
+						reqErr = fmt.Errorf("MESSAGE 被拒 code=%d", code)
+						break
 					}
+					sentOnConn++
+					s.touch() // MO 拿到 202：会话活着
 				}
-				b.resp <- sendResp{code: code, err: err}
+				if len(tpdus) > 1 && reqErr == nil {
+					s.logf("[tx] 长短信分 %d 段全部发出", len(tpdus))
+				}
+				b.resp <- sendResp{code: reqCode, err: reqErr}
 			}
 			if len(batch) > 1 {
 				s.logf("[tx] 批量发送完成：本批 %d 条", len(batch))
@@ -454,7 +500,11 @@ func decodeDeliverTPDU(t, raw []byte) (InboundSMS, bool) {
 	p++
 	ud := t[p:]
 	text := decodeUserData(ud, dcs, udl, udhi)
-	return InboundSMS{Sender: sender, Text: text, Raw: raw}, true
+	sms := InboundSMS{Sender: sender, Text: text, Raw: raw, Total: 1, Seq: 1}
+	if udhi {
+		sms.Ref, sms.Total, sms.Seq = parseUDHConcat(ud)
+	}
+	return sms, true
 }
 
 // decodeAddress 解码 3GPP 地址（TOA + BCD 半字节），国际号加 '+'。
