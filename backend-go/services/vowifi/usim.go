@@ -50,6 +50,26 @@ func openSerial(dev string) (*serialPort, error) {
 
 func (s *serialPort) close() { unix.Close(s.fd) }
 
+// SetCFUN 通过 AT 口设置模块功能模式：4=关射频(飞行模式，不在蜂窝基站注册，SIM 仍供电可鉴权)，
+// 1=全功能(恢复蜂窝)。VoWiFi 开启时设 4 让卡不在中国大陆基站注册；关闭 VoWiFi 时恢复 1。
+func SetCFUN(atPort string, mode int, verbose bool) error {
+	sp, err := openSerial(atPort)
+	if err != nil {
+		return err
+	}
+	defer sp.close()
+	o := sp.cmdUntil(fmt.Sprintf("AT+CFUN=%d", mode), 6*time.Second, func(s string) bool {
+		return strings.Contains(s, "OK") || strings.Contains(s, "ERROR")
+	})
+	if verbose {
+		fmt.Printf("[vowifi] AT+CFUN=%d -> %q\n", mode, strings.TrimSpace(o))
+	}
+	if !strings.Contains(o, "OK") {
+		return fmt.Errorf("AT+CFUN=%d 未返回 OK: %q", mode, strings.TrimSpace(o))
+	}
+	return nil
+}
+
 // cmd 发送一条 AT 命令，等待 wait 后把这段时间内收到的全部数据返回（对应 poc6 mmcmd）。
 func (s *serialPort) cmd(at string, wait time.Duration) string {
 	return s.cmdUntil(at, wait, nil)

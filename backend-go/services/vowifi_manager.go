@@ -22,7 +22,12 @@ import (
 type vowifiCard struct {
 	daemon  *vowifi.Daemon
 	release func() // 释放该卡的 mmcli --inhibit
+	atPort  string // 该卡的 AT 口（关闭时用于恢复 CFUN=1）
 }
+
+// vowifiAirplane 是否让 VoWiFi 模式的卡进飞行(CFUN=4)：默认开，VOWIFI_AIRPLANE=0 关闭。
+func vowifiAirplane() bool { return os.Getenv("VOWIFI_AIRPLANE") != "0" }
+func vowifiVerbose() bool  { return os.Getenv("VOWIFI_VERBOSE") != "" }
 
 // VowifiManager 单例，持有所有常驻 VoWiFi 会话。
 type VowifiManager struct {
@@ -97,6 +102,16 @@ func (m *VowifiManager) Start(modem *models.Modem) error {
 	}
 	steps.Set(vowifi.StepInhibit, vowifi.StepOK, "")
 
+	// 飞行模式：关射频，让这张卡不在中国大陆蜂窝基站注册（SIM 仍供电，VoWiFi 鉴权照常）。
+	// 失败不阻断（个别固件 CFUN=4 会关 SIM，那样就退回不关射频，仍能跑 VoWiFi）。
+	if cfg.ATPort != "" && vowifiAirplane() {
+		if err := vowifi.SetCFUN(cfg.ATPort, 4, vowifiVerbose()); err != nil {
+			fmt.Printf("[vowifi] 卡 %d 进飞行(CFUN=4)失败(不阻断): %v\n", modem.ID, err)
+		} else {
+			time.Sleep(2 * time.Second) // 等模块完成 detach
+		}
+	}
+
 	mID := modem.ID
 	daemon, err := vowifi.StartDaemon(cfg, steps, func(sms vowifi.InboundSMS) {
 		ingestVowifiInbound(mID, sms)
@@ -108,7 +123,7 @@ func (m *VowifiManager) Start(modem *models.Modem) error {
 		return err
 	}
 	m.mu.Lock()
-	m.cards[mID] = &vowifiCard{daemon: daemon, release: release}
+	m.cards[mID] = &vowifiCard{daemon: daemon, release: release, atPort: cfg.ATPort}
 	m.mu.Unlock()
 
 	// IMS 注册返回了本机号码（MSISDN）则回写 DB —— VoWiFi 模式下 mmcli 读不到号码，
@@ -133,6 +148,12 @@ func (m *VowifiManager) Stop(modemID uint) {
 		return
 	}
 	c.daemon.Stop()
+	// 关 VoWiFi 时恢复蜂窝(CFUN=1)，否则卡会一直停在飞行态。必须在 release 交还给 MM 之前发。
+	if c.atPort != "" && vowifiAirplane() {
+		if err := vowifi.SetCFUN(c.atPort, 1, vowifiVerbose()); err != nil {
+			fmt.Printf("[vowifi] 卡 %d 恢复蜂窝(CFUN=1)失败: %v\n", modemID, err)
+		}
+	}
 	if c.release != nil {
 		c.release()
 	}
@@ -201,9 +222,46 @@ func (m *VowifiManager) StartWatchdog() {
 			for id, c := range m.cards {
 				running = append(running, ck{id, c.daemon})
 			}
+			runningIDs := map[uint]bool{}
+			for _, c := range running {
+				runningIDs[c.id] = true
+			}
 			m.mu.Unlock()
 
 			now := time.Now()
+
+			// 自愈①：应运行(vowifi_mode=true)但当前未运行的卡 → 自动拉起。
+			// 覆盖"开机重试耗尽没起来 / modem 一度不可见 / 残留 inhibit 挡住"等情况：
+			// 一旦条件恢复，看门狗下一拍就把它拉起来，无需人工重启。带每卡指数退避。
+			var want []models.Modem
+			database.DB.Where("vowifi_mode = ?", true).Find(&want)
+			for i := range want {
+				mo := want[i]
+				if runningIDs[mo.ID] {
+					continue
+				}
+				shift := streak[mo.ID]
+				if shift > 4 {
+					shift = 4
+				}
+				cooldown := time.Duration(1<<uint(shift)) * 3 * time.Minute
+				if cooldown > 30*time.Minute {
+					cooldown = 30 * time.Minute
+				}
+				if t, ok := rebuildAt[mo.ID]; ok && now.Sub(t) < cooldown {
+					continue
+				}
+				fmt.Printf("[vowifi] 看门狗：卡 %d 应运行但未运行，自动拉起\n", mo.ID)
+				if err := m.Start(&mo); err != nil {
+					fmt.Printf("[vowifi] 看门狗：卡 %d 拉起失败: %v\n", mo.ID, err)
+					rebuildAt[mo.ID] = time.Now()
+					streak[mo.ID]++
+				} else {
+					delete(rebuildAt, mo.ID)
+					delete(streak, mo.ID)
+				}
+			}
+
 			for _, c := range running {
 				silent := now.Sub(c.d.LastAlive())
 				if silent < deadThreshold {
