@@ -219,6 +219,7 @@ func (m *VowifiManager) StartWatchdog() {
 	}
 	rebuildAt := map[uint]time.Time{} // 每卡上次重建时刻（退避用）
 	streak := map[uint]int{}          // 每卡连续重建次数（退避指数）
+	resetAt := map[uint]time.Time{}   // 每卡上次硬复位时刻（升级式自愈的冷却）
 
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
@@ -258,6 +259,24 @@ func (m *VowifiManager) StartWatchdog() {
 				cooldown := time.Duration(1<<uint(shift)) * 3 * time.Minute
 				if cooldown > 30*time.Minute {
 					cooldown = 30 * time.Minute
+				}
+				// 升级式自愈：软重试连续失败 ≥3 次（多半是 USIM 逻辑通道泄漏耗尽 CCHO ERROR /
+				// QMI CID 卡死，或模块 USB 卡住），软重试永远过不去 → 对模块做一次硬复位(--reset)
+				// 清掉卡死状态，等它 USB 重新枚举后下一拍再拉起。带 10min 冷却避免反复硬复位。
+				if streak[mo.ID] >= 3 {
+					if last, ok := resetAt[mo.ID]; !ok || now.Sub(last) > 10*time.Minute {
+						idx := resolveModemIndex(mo.Imei, mo.MmObjectPath)
+						fmt.Printf("[vowifi] 看门狗：卡 %d 连续%d次拉起失败，硬复位模块(idx=%q)清 USIM/QMI 卡死\n", mo.ID, streak[mo.ID], idx)
+						Push("vowifi_down", "VoWiFi 模块硬复位",
+							fmt.Sprintf("卡#%d 软重试无效，正在硬复位模块自愈", mo.ID), "admin", nil)
+						if idx != "" {
+							ResetModem(idx)
+						}
+						resetAt[mo.ID] = now
+						streak[mo.ID] = 0                  // 复位后从头退避
+						rebuildAt[mo.ID] = now             // 冷却重新计时（默认 3min 后重试，够模块枚举）
+						continue
+					}
 				}
 				if t, ok := rebuildAt[mo.ID]; ok && now.Sub(t) < cooldown {
 					continue
