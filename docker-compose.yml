@@ -14,8 +14,11 @@ services:
     environment:
       - DATABASE_URL=sqlite:////app/data/sim_manager.db
       - DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=1960636882
+      # 从同目录 .env 读取（.env 已被 .gitignore 忽略，勿硬编码真实值）
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      # 可选：允许发命令的额外 chat_id（逗号分隔）
+      - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
     privileged: true
     group_add:
       - dialout
