@@ -19,6 +19,9 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       # 可选：允许发命令的额外 chat_id（逗号分隔）
       - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      # VoWiFi：详细日志（排障用）+ USIM AKA 顺序（at=AT优先，QMI兜底）
+      - VOWIFI_VERBOSE=${VOWIFI_VERBOSE:-1}
+      - VOWIFI_AKA_ORDER=${VOWIFI_AKA_ORDER:-at}
     privileged: true
     group_add:
       - dialout
