@@ -50,9 +50,10 @@ type Modem struct {
 	// VoWiFi（Wi-Fi Calling）相关：VowifiMode=true 时该卡改走自建 VoWiFi 协议栈
 	// （IKEv2/EAP-AKA/IMS-ESP）收发短信，而非 mmcli。进入该模式要求该卡不再由
 	// ModemManager 管理（独占串口 + 裸 socket）。
-	VowifiMode   bool   `gorm:"default:false" json:"vowifi_mode"`
-	VowifiEpdgIP string `gorm:"size:64" json:"vowifi_epdg_ip"` // ePDG IPv4（留空则用环境变量 VOWIFI_EPDG_IP）
-	VowifiATPort string `gorm:"size:64" json:"vowifi_at_port"` // 串口设备，如 /dev/ttyUSB2（留空则用 VOWIFI_AT_PORT）
+	VowifiMode     bool   `gorm:"default:false" json:"vowifi_mode"`
+	VowifiEpdgIP   string `gorm:"size:64" json:"vowifi_epdg_ip"`          // ePDG IPv4（留空则用环境变量 VOWIFI_EPDG_IP）
+	VowifiATPort   string `gorm:"size:64" json:"vowifi_at_port"`          // 串口设备，如 /dev/ttyUSB2（留空则用 VOWIFI_AT_PORT）
+	VowifiAirplane bool   `gorm:"default:true" json:"vowifi_airplane"`    // 飞行模式：VoWiFi 期间关射频(CFUN=4)不在蜂窝注册
 }
 
 func (Modem) TableName() string { return "modems" }

@@ -5,7 +5,7 @@ import {
   Clock, MessageSquare, Upload, Download, Pencil, Check, X,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { getModemDetailApi, updateModemApi, refreshModemApi, setVowifiModeApi, type ModemDetail } from '../api/modems'
+import { getModemDetailApi, updateModemApi, refreshModemApi, setVowifiModeApi, setAirplaneApi, type ModemDetail } from '../api/modems'
 import { useT } from '../i18n'
 import { useLangStore } from '../store/langStore'
 import { useAuthStore } from '../store/authStore'
@@ -145,6 +145,16 @@ export default function SimDetail() {
     } finally { setVwSaving(false) }
   }
 
+  // 切换飞行模式（VoWiFi 期间关射频，不在蜂窝基站注册）
+  const [airSaving, setAirSaving] = useState(false)
+  const saveAirplane = async (on: boolean) => {
+    if (!id) return
+    setAirSaving(true)
+    try { await setAirplaneApi(Number(id), on); load() }
+    catch (e: any) { alert(e?.response?.data?.msg || '切换飞行模式失败') }
+    finally { setAirSaving(false) }
+  }
+
   useEffect(() => { load() }, [id])
 
   // VoWiFi 模式开启但会话尚未就绪时，轮询刷新以实时显示各步骤状态
@@ -243,7 +253,7 @@ export default function SimDetail() {
       {/* ── 副状态条：号码 · 注册 · 时长/上下行/今日短信 ── */}
       <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 pl-11 -mt-2 text-xs text-gray-400">
         <span className="font-mono text-gray-200">{modem.phone_number || t('unknown')}</span>
-        <span className={clsx(modem.vowifi_mode && 'text-amber-400')}>{modem.vowifi_mode ? t('detail_reg_airplane') : regLabel(modem.registration_state)}</span>
+        <span className={clsx(modem.vowifi_mode && modem.vowifi_airplane && 'text-amber-400')}>{modem.vowifi_mode && modem.vowifi_airplane ? t('detail_reg_airplane') : regLabel(modem.registration_state)}</span>
         <span className="text-gray-600">|</span>
         <span className={clsx('flex items-center gap-1', modem.vowifi_mode && 'opacity-60')}><Clock className="w-3.5 h-3.5 text-blue-400" /> {fmtDuration(modem.connection_duration)}</span>
         <span className={clsx('flex items-center gap-1', modem.vowifi_mode && 'opacity-60')}><Upload className="w-3.5 h-3.5 text-orange-400" /> {fmtBytes(modem.tx_bytes)}</span>
@@ -315,6 +325,24 @@ export default function SimDetail() {
               </button>
             </div>
 
+            {/* 飞行模式开关：VoWiFi 期间关射频，不在中国大陆蜂窝基站注册（SIM 仍供电可鉴权）*/}
+            {modem.vowifi_mode && (
+              <div className="flex items-center gap-2 mt-2 text-[11px]">
+                <span className="text-gray-400">✈️ 飞行模式</span>
+                <span className="text-gray-500">· 关射频，不在蜂窝注册</span>
+                <button
+                  onClick={() => saveAirplane(!modem.vowifi_airplane)}
+                  disabled={airSaving}
+                  className={clsx('relative inline-flex h-4 w-7 items-center rounded-full transition-colors disabled:opacity-50 shrink-0 ml-auto',
+                    modem.vowifi_airplane ? 'bg-amber-500' : 'bg-gray-600')}
+                  title="飞行模式（关射频，不在蜂窝基站注册）"
+                >
+                  <span className={clsx('inline-block h-3 w-3 transform rounded-full bg-white transition-transform',
+                    modem.vowifi_airplane ? 'translate-x-3.5' : 'translate-x-0.5')} />
+                </button>
+              </div>
+            )}
+
             {/* 建立中/失败时：展开成带标签的阶段（成功后收成上面的小圆点）*/}
             {modem.vowifi_mode && !allOk && (
               <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2.5">
@@ -370,7 +398,7 @@ export default function SimDetail() {
               : t('none')
           } />
           <InfoRow label={t('detail_operator')} value={modem.operator || t('none')} stale={modem.vowifi_mode} staleTag={t('vowifi_stale_note')} />
-          <InfoRow label={t('detail_reg')} value={modem.vowifi_mode ? t('detail_reg_airplane') : regLabel(modem.registration_state)} />
+          <InfoRow label={t('detail_reg')} value={modem.vowifi_mode && modem.vowifi_airplane ? t('detail_reg_airplane') : regLabel(modem.registration_state)} stale={modem.vowifi_mode && !modem.vowifi_airplane} staleTag={t('vowifi_stale_note')} />
           <InfoRow label={t('detail_tech')} value={techLabel(modem.access_technologies)} stale={modem.vowifi_mode} staleTag={t('vowifi_stale_note')} />
         </Panel>
 

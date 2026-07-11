@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"simnexus-go/database"
+	"simnexus-go/models"
 	"simnexus-go/middleware"
 	"simnexus-go/security"
 	"simnexus-go/services"
@@ -155,6 +156,38 @@ func SetVowifiMode(c *gin.Context) {
 	// 据最新模式启停该卡的常驻 VoWiFi 会话
 	go services.GetVowifiManager().SyncOne(modem)
 	OK(c, modem)
+}
+
+type airplaneUpdate struct {
+	Airplane *bool `json:"airplane" binding:"required"`
+}
+
+// SetAirplaneMode godoc
+// @Summary 切换该卡的飞行模式（VoWiFi 期间关射频，不在蜂窝基站注册）
+// @Tags 设备管理
+// @Router /api/v1/modems/{id}/airplane [patch]
+func SetAirplaneMode(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	if !u.IsAdmin() {
+		Fail(c, http.StatusForbidden, 403, "仅管理员可切换飞行模式")
+		return
+	}
+	id, _ := strconv.Atoi(c.Param("id"))
+	var data airplaneUpdate
+	if err := c.ShouldBindJSON(&data); err != nil || data.Airplane == nil {
+		Fail(c, http.StatusBadRequest, 400, "参数错误")
+		return
+	}
+	var modem models.Modem
+	if database.DB.First(&modem, id).Error != nil {
+		Fail(c, http.StatusNotFound, 404, "设备不存在")
+		return
+	}
+	if err := services.GetVowifiManager().SetAirplane(&modem, *data.Airplane); err != nil {
+		Fail(c, http.StatusBadGateway, 502, "切换失败: "+err.Error())
+		return
+	}
+	OK(c, gin.H{"airplane": *data.Airplane})
 }
 
 // GetModemDetail godoc

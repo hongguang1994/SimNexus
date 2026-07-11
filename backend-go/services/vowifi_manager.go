@@ -25,9 +25,7 @@ type vowifiCard struct {
 	atPort  string // 该卡的 AT 口（关闭时用于恢复 CFUN=1）
 }
 
-// vowifiAirplane 是否让 VoWiFi 模式的卡进飞行(CFUN=4)：默认开，VOWIFI_AIRPLANE=0 关闭。
-func vowifiAirplane() bool { return os.Getenv("VOWIFI_AIRPLANE") != "0" }
-func vowifiVerbose() bool  { return os.Getenv("VOWIFI_VERBOSE") != "" }
+func vowifiVerbose() bool { return os.Getenv("VOWIFI_VERBOSE") != "" }
 
 // VowifiManager 单例，持有所有常驻 VoWiFi 会话。
 type VowifiManager struct {
@@ -115,7 +113,7 @@ func (m *VowifiManager) Start(modem *models.Modem) error {
 
 	// 飞行模式：关射频，让这张卡不在中国大陆蜂窝基站注册（SIM 仍供电，VoWiFi 鉴权照常）。
 	// 失败不阻断（个别固件 CFUN=4 会关 SIM，那样就退回不关射频，仍能跑 VoWiFi）。
-	if cfg.ATPort != "" && vowifiAirplane() {
+	if cfg.ATPort != "" && modem.VowifiAirplane {
 		if err := vowifi.SetCFUN(cfg.ATPort, 4, vowifiVerbose()); err != nil {
 			fmt.Printf("[vowifi] 卡 %d 进飞行(CFUN=4)失败(不阻断): %v\n", modem.ID, err)
 		} else {
@@ -160,7 +158,7 @@ func (m *VowifiManager) Stop(modemID uint) {
 	}
 	c.daemon.Stop()
 	// 关 VoWiFi 时恢复蜂窝(CFUN=1)，否则卡会一直停在飞行态。必须在 release 交还给 MM 之前发。
-	if c.atPort != "" && vowifiAirplane() {
+	if c.atPort != "" {
 		if err := vowifi.SetCFUN(c.atPort, 1, vowifiVerbose()); err != nil {
 			fmt.Printf("[vowifi] 卡 %d 恢复蜂窝(CFUN=1)失败: %v\n", modemID, err)
 		}
@@ -168,6 +166,26 @@ func (m *VowifiManager) Stop(modemID uint) {
 	if c.release != nil {
 		c.release()
 	}
+}
+
+// SetAirplane 切换某卡的飞行模式（关/开射频）。持久化到 DB；若会话运行中，立即通过 AT 口
+// 发 CFUN=4/1 生效（VoWiFi 走 IP，不受射频影响，无需重建会话）。未运行则仅保存，下次启动生效。
+func (m *VowifiManager) SetAirplane(modem *models.Modem, on bool) error {
+	if err := database.DB.Model(&models.Modem{}).Where("id = ?", modem.ID).
+		Update("vowifi_airplane", on).Error; err != nil {
+		return err
+	}
+	m.mu.Lock()
+	c := m.cards[modem.ID]
+	m.mu.Unlock()
+	if c == nil || c.atPort == "" {
+		return nil // 会话未运行，仅保存设置，下次启动时应用
+	}
+	mode := 1
+	if on {
+		mode = 4
+	}
+	return vowifi.SetCFUN(c.atPort, mode, vowifiVerbose())
 }
 
 // SendSMS 通过常驻会话发一条 MO 短信；若会话未运行则按需拉起。

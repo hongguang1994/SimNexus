@@ -57,6 +57,7 @@ func ensureColumns(db *gorm.DB) {
 		`ALTER TABLE modems ADD COLUMN vowifi_mode numeric DEFAULT 0`,
 		`ALTER TABLE modems ADD COLUMN vowifi_epdg_ip VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE modems ADD COLUMN vowifi_at_port VARCHAR(64) DEFAULT ''`,
+		`ALTER TABLE modems ADD COLUMN vowifi_airplane numeric DEFAULT 1`,
 	}
 	for _, sql := range alters {
 		_ = db.Exec(sql).Error // 列已存在会报 "duplicate column name"，忽略即可

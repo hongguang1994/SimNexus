@@ -10,10 +10,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+// atMu 串行化对同一 AT 串口的访问：USIM AKA 与手动 CFUN 切换不能同时写同一 tty（会串码）。
+var atMu sync.Mutex
 
 // USIMAKAResult 保存一次 USIM AUTHENTICATE 的结果。
 type USIMAKAResult struct {
@@ -53,6 +57,8 @@ func (s *serialPort) close() { unix.Close(s.fd) }
 // SetCFUN 通过 AT 口设置模块功能模式：4=关射频(飞行模式，不在蜂窝基站注册，SIM 仍供电可鉴权)，
 // 1=全功能(恢复蜂窝)。VoWiFi 开启时设 4 让卡不在中国大陆基站注册；关闭 VoWiFi 时恢复 1。
 func SetCFUN(atPort string, mode int, verbose bool) error {
+	atMu.Lock()
+	defer atMu.Unlock()
 	sp, err := openSerial(atPort)
 	if err != nil {
 		return err
@@ -153,6 +159,8 @@ func (s *Session) usimAKA(aid string, rand, autn []byte) (*USIMAKAResult, error)
 // runUSIMAKA 用 RAND/AUTN 在指定串口上跑一次 USIM AUTHENTICATE，返回 RES/CK/IK。
 // dev 如 /dev/ttyUSB2，aid 为 USIM 应用标识（默认 A0000000871002FF44FFFF8901010100）。
 func runUSIMAKA(dev, aid string, rand, autn []byte) (*USIMAKAResult, error) {
+	atMu.Lock()
+	defer atMu.Unlock()
 	sp, err := openSerial(dev)
 	if err != nil {
 		return nil, err

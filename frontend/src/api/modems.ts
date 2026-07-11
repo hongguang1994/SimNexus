@@ -23,6 +23,7 @@ export interface Modem {
   vowifi_mode: boolean
   vowifi_epdg_ip: string | null
   vowifi_at_port: string | null
+  vowifi_airplane: boolean
 }
 
 export interface VowifiStep {
@@ -59,3 +60,7 @@ export const setVowifiModeApi = (
   id: number,
   data: { vowifi_mode?: boolean; vowifi_epdg_ip?: string; vowifi_at_port?: string },
 ) => api.patch<Modem>(`/modems/${id}/vowifi`, data)
+
+// 切换该卡的飞行模式（VoWiFi 期间关射频，不在蜂窝基站注册）。仅管理员。
+export const setAirplaneApi = (id: number, on: boolean) =>
+  api.patch<{ airplane: boolean }>(`/modems/${id}/airplane`, { airplane: on })

@@ -100,6 +100,7 @@ func registerModems(auth *gin.RouterGroup) {
 	modems.GET("/:id", handlers.GetModem)                  // 获取单个设备基本信息
 	modems.PATCH("/:id", handlers.UpdateModem)             // 修改设备别名等属性
 	modems.PATCH("/:id/vowifi", handlers.SetVowifiMode)    // 切换该卡的 VoWiFi 模式（仅管理员）
+	modems.PATCH("/:id/airplane", handlers.SetAirplaneMode) // 切换该卡的飞行模式（仅管理员）
 	modems.GET("/:id/detail", handlers.GetModemDetail)     // 获取设备详情（含实时信号、流量等）
 	modems.POST("/:id/refresh", handlers.RefreshModem)     // 手动触发单个设备立即刷新
 }
