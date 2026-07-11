@@ -651,19 +651,27 @@ func (s *Session) imsRegister(subscribe bool, refresh *regContext) (*regContext,
 	branch2 := "z9hG4bK" + hex.EncodeToString(randBytes(8))
 	msg2 := s.buildRegister(id, src, callid, fromtag, branch2, baseCSeq+2, id.uePortC, nonceB64, digestResp, secserver, serviceRoute, "TCP")
 	msg2 = replaceOnce(msg2, id.secClient, secClient2)
-	s.step(StepRegister, StepRunning, "")
+	if refresh == nil {
+		s.step(StepRegister, StepRunning, "")
+	}
 	resp2, conn := s.tcpImsRegister(src, target, id.uePortC, pcscfPortS, uint32(pcscfSpiS), imsIKPadded, msg2)
 	if resp2 == "" || conn == nil {
-		s.step(StepRegister, StepFail, "第2条 REGISTER 无响应")
+		if refresh == nil {
+			s.step(StepRegister, StepFail, "第2条 REGISTER 无响应")
+		}
 		return nil, fmt.Errorf("第2条 REGISTER 无响应")
 	}
 	code2, hdrs2 := parseSIPResponse(resp2)
 	if code2 != 200 {
-		s.step(StepRegister, StepFail, fmt.Sprintf("REGISTER code=%d", code2))
+		if refresh == nil {
+			s.step(StepRegister, StepFail, fmt.Sprintf("REGISTER code=%d", code2))
+		}
 		return nil, fmt.Errorf("REGISTER 失败 code=%d", code2)
 	}
 	s.logf("IMS REGISTER 成功 200 OK")
-	s.step(StepRegister, StepOK, "200 OK")
+	if refresh == nil {
+		s.step(StepRegister, StepOK, "200 OK")
+	}
 
 	aor := id.impu
 	for _, v := range hdrs2["P-Associated-URI"] {

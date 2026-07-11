@@ -197,6 +197,7 @@ export const en: Record<TranslationKey, string> = {
   detail_ports: 'Ports',
   detail_reg_home: 'Registered (Home)',
   detail_reg_roaming: 'Registered (Roaming)',
+  detail_reg_airplane: 'Airplane · radio off',
   detail_reg_searching: 'Searching for network',
   detail_reg_denied: 'Registration denied',
   detail_reg_idle: 'Idle',

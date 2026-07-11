@@ -195,6 +195,7 @@ export const zh = {
   detail_ports: '端口列表',
   detail_reg_home: '已注册（归属网络）',
   detail_reg_roaming: '已注册（漫游）',
+  detail_reg_airplane: '飞行模式 · 射频已关',
   detail_reg_searching: '搜索网络中',
   detail_reg_denied: '注册被拒',
   detail_reg_idle: '空闲',

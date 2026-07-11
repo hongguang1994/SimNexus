@@ -243,7 +243,7 @@ export default function SimDetail() {
       {/* ── 副状态条：号码 · 注册 · 时长/上下行/今日短信 ── */}
       <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 pl-11 -mt-2 text-xs text-gray-400">
         <span className="font-mono text-gray-200">{modem.phone_number || t('unknown')}</span>
-        <span className={clsx(modem.vowifi_mode && 'opacity-60')}>{regLabel(modem.registration_state)}</span>
+        <span className={clsx(modem.vowifi_mode && 'text-amber-400')}>{modem.vowifi_mode ? t('detail_reg_airplane') : regLabel(modem.registration_state)}</span>
         <span className="text-gray-600">|</span>
         <span className={clsx('flex items-center gap-1', modem.vowifi_mode && 'opacity-60')}><Clock className="w-3.5 h-3.5 text-blue-400" /> {fmtDuration(modem.connection_duration)}</span>
         <span className={clsx('flex items-center gap-1', modem.vowifi_mode && 'opacity-60')}><Upload className="w-3.5 h-3.5 text-orange-400" /> {fmtBytes(modem.tx_bytes)}</span>
@@ -370,7 +370,7 @@ export default function SimDetail() {
               : t('none')
           } />
           <InfoRow label={t('detail_operator')} value={modem.operator || t('none')} stale={modem.vowifi_mode} staleTag={t('vowifi_stale_note')} />
-          <InfoRow label={t('detail_reg')} value={regLabel(modem.registration_state)} stale={modem.vowifi_mode} staleTag={t('vowifi_stale_note')} />
+          <InfoRow label={t('detail_reg')} value={modem.vowifi_mode ? t('detail_reg_airplane') : regLabel(modem.registration_state)} />
           <InfoRow label={t('detail_tech')} value={techLabel(modem.access_technologies)} stale={modem.vowifi_mode} staleTag={t('vowifi_stale_note')} />
         </Panel>
 
