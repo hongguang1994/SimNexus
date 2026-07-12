@@ -406,7 +406,7 @@ export default function Layout() {
           style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.3) 0%, transparent 70%)', top: '40%', right: '25%' }} />
       </div>
       {/* Top header */}
-      <header className="glass-strong rounded-2xl border border-blue-500/10 shadow-xl shadow-black/20 h-14 flex items-center px-3 md:px-5 shrink-0 z-40">
+      <header className="glass-strong rounded-2xl border border-blue-500/10 shadow-sm h-11 flex items-center px-3 md:px-5 shrink-0 z-40">
         <div className="flex items-center gap-2 md:w-48 shrink-0">
           <button
             onClick={() => (isMobile ? setMobileNav(o => !o) : setSideCollapsed(c => !c))}
@@ -597,7 +597,7 @@ export default function Layout() {
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMobileNav(false)} />
         )}
         <aside className={clsx(
-          'glass-strong rounded-2xl border border-blue-500/10 shadow-xl shadow-black/20 flex flex-col py-4 overflow-y-auto overflow-x-hidden transition-transform duration-200',
+          'glass-strong rounded-2xl border border-blue-500/10 shadow-sm flex flex-col py-4 overflow-y-auto overflow-x-hidden transition-transform duration-200',
           // 手机(<md)：固定定位的抽屉，按 mobileNav 滑入/滑出
           'max-md:fixed max-md:inset-y-2 max-md:left-2 max-md:z-50 max-md:w-52 max-md:px-2',
           mobileNav ? 'max-md:translate-x-0' : 'max-md:-translate-x-[130%]',

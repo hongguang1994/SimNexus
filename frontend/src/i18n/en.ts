@@ -58,6 +58,9 @@ export const en: Record<TranslationKey, string> = {
   status_disconnected: 'Disconnected',
   status_error: 'Error',
   status_unknown: 'Unknown',
+  status_cellular: 'Cellular',
+  vowifi_settings: 'Settings',
+  vowifi_runtime: 'Runtime',
 
   // Login
   login_subtitle: 'SIM Card Management Platform',

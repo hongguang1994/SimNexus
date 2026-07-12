@@ -56,6 +56,9 @@ export const zh = {
   status_disconnected: '离线',
   status_error: '错误',
   status_unknown: '未知',
+  status_cellular: '蜂窝',
+  vowifi_settings: '设置',
+  vowifi_runtime: '运行信息',
 
   // Login
   login_subtitle: 'SIM 卡管理平台',
