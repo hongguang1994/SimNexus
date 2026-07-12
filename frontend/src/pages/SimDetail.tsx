@@ -40,11 +40,19 @@ function techLabel(techs: string | null | undefined): string {
 }
 
 // 在线状态徽标：蜂窝在线 或 VoWiFi 在线都算“在线”，用不同图标区分（📶VoWiFi / 信号格蜂窝）。
-const StatusBadge = ({ status, vowifiOnline, t }: { status: string; vowifiOnline?: boolean; t: ReturnType<typeof useT> }) => {
+const StatusBadge = ({ status, vowifiOnline, airplane, t }: { status: string; vowifiOnline?: boolean; airplane?: boolean; t: ReturnType<typeof useT> }) => {
   if (vowifiOnline) {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-green-500/20 text-green-400 border-green-500/30">
         <Wifi className="w-3 h-3" /> {t('status_connected')} · VoWiFi
+      </span>
+    )
+  }
+  // 飞行模式且 VoWiFi 未在线：射频已关，不在任何网络注册 → 离线（飞行）
+  if (airplane) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-amber-500/20 text-amber-500 border-amber-500/30">
+        ✈️ {t('detail_reg_airplane')}
       </span>
     )
   }
@@ -206,8 +214,9 @@ export default function SimDetail() {
   if (!modem) return <div className="p-6 text-red-400">{t('detail_not_found')}</div>
 
   const displayName = modem.alias || `SIM ${modem.id}`
-  // 飞行模式：射频已关，蜂窝侧的运营商/制式/信号/注册都无效，清成 —（不再当“旧值”展示）
-  const rfOff = modem.vowifi_mode && modem.vowifi_airplane
+  // 飞行模式：射频已关，蜂窝侧的运营商/制式/信号/注册都无效，清成 —（不再当“旧值”展示）。
+  // 与 VoWiFi 解耦：只要开了飞行模式就算射频关，不管 WiFi-Calling 开没开。
+  const rfOff = modem.vowifi_airplane
 
   return (
     <div className="p-6 space-y-5 max-w-5xl mx-auto">
@@ -237,13 +246,13 @@ export default function SimDetail() {
               className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors">
               <Pencil className="w-3.5 h-3.5" />
             </button>
-            <StatusBadge status={modem.status} vowifiOnline={modem.vowifi_mode && modem.vowifi_running} t={t} />
+            <StatusBadge status={modem.status} vowifiOnline={modem.vowifi_mode && modem.vowifi_running} airplane={modem.vowifi_airplane} t={t} />
           </div>
         )}
 
         {/* 状态栏指标：信号格 + % + 制式 + 运营商（VoWiFi 下为旧值置灰）*/}
         <div className={clsx('flex items-center gap-2.5 text-sm', modem.vowifi_mode && 'opacity-60')}>
-          {modem.vowifi_mode && modem.vowifi_airplane ? (
+          {rfOff ? (
             // 飞行模式：射频已关，没有实时信号
             <span className="text-gray-400">{t('detail_signal')} —</span>
           ) : (
@@ -280,7 +289,7 @@ export default function SimDetail() {
       {/* ── 副状态条：号码 · 注册（VoWiFi 旧值提示）── */}
       <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 pl-11 -mt-2 text-xs text-gray-400">
         <span className="font-mono text-gray-200">{modem.phone_number || t('unknown')}</span>
-        <span className={clsx(modem.vowifi_mode && modem.vowifi_airplane && 'text-amber-400')}>{modem.vowifi_mode && modem.vowifi_airplane ? t('detail_reg_airplane') : regLabel(modem.registration_state)}</span>
+        <span className={clsx(rfOff && 'text-amber-400')}>{rfOff ? t('detail_reg_airplane') : regLabel(modem.registration_state)}</span>
         {modem.vowifi_mode && <span className="text-amber-500/80">⚠ {t('vowifi_stale_note')}</span>}
       </div>
 

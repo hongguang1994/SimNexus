@@ -412,6 +412,12 @@ func EnableModem(mmIndex string) bool {
 	return err == nil
 }
 
+// SetModemPowerLow 把模块置为低功耗态（关射频、保留 SIM，等效 CFUN=4），用于飞行模式。
+func SetModemPowerLow(mmIndex string) bool {
+	_, _, err := run(30*time.Second, "mmcli", "-m", mmIndex, "--set-power-state-low")
+	return err == nil
+}
+
 // ResetModem 对模块做硬件级复位（触发 USB 重新枚举）。
 // 用于换卡后模块固件卡在 sim-missing 等异常状态、仅重启 ModemManager 服务无法恢复的场景。
 func ResetModem(mmIndex string) bool {

@@ -86,12 +86,20 @@ export default function SimCards() {
     return map[state.toLowerCase()] ?? state
   }
 
-  const StatusBadge = ({ status, vowifiOnline }: { status: string; vowifiOnline?: boolean }) => {
+  const StatusBadge = ({ status, vowifiOnline, airplane }: { status: string; vowifiOnline?: boolean; airplane?: boolean }) => {
     // VoWiFi 在线也算在线，用 Wifi 图标 + “· VoWiFi” 区分蜂窝在线
     if (vowifiOnline) {
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-400">
           <Wifi className="w-3.5 h-3.5" /> {t('status_connected')} · VoWiFi
+        </span>
+      )
+    }
+    // 飞行模式且 VoWiFi 未在线：射频关，不在任何网络注册
+    if (airplane) {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-500">
+          ✈️ {t('detail_reg_airplane')}
         </span>
       )
     }
@@ -145,7 +153,7 @@ export default function SimCards() {
     setRefreshing(false)
   }
 
-  const connected = rows.filter(r => r.status === 'connected' || (r.vowifi_mode && r.vowifi_running)).length
+  const connected = rows.filter(r => (r.status === 'connected' && !r.vowifi_airplane) || (r.vowifi_mode && r.vowifi_running)).length
 
   const SignalBar = ({ quality }: { quality: number }) => {
     const bars = Math.round((quality / 100) * 5)
@@ -240,17 +248,17 @@ export default function SimCards() {
                     <div className="font-medium text-white">{r.alias || `SIM ${r.id}`}</div>
                     <div className="text-xs text-gray-500 font-mono mt-0.5">{r.phone_number || r.imei || r.device_path || t('none')}</div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={r.status} vowifiOnline={r.vowifi_mode && r.vowifi_running} /></td>
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-200">{r.vowifi_mode && r.vowifi_airplane ? <span className="text-gray-500">{t('none')}</span> : (r.operator || t('none'))}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={r.status} vowifiOnline={r.vowifi_mode && r.vowifi_running} airplane={r.vowifi_airplane} /></td>
+                  <td className="px-4 py-3 whitespace-nowrap text-gray-200">{r.vowifi_airplane ? <span className="text-gray-500">{t('none')}</span> : (r.operator || t('none'))}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    {r.vowifi_mode && r.vowifi_airplane ? <span className="text-gray-500">{t('none')}</span> : (
+                    {r.vowifi_airplane ? <span className="text-gray-500">{t('none')}</span> : (
                       <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-xs font-mono">
                         {techLabel(r.access_technologies)}
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-300">{r.vowifi_mode && r.vowifi_airplane ? <span className="text-amber-400">{t('detail_reg_airplane')}</span> : regLabel(r.registration_state)}</td>
-                  <td className="px-4 py-3">{r.vowifi_mode && r.vowifi_airplane ? <span className="text-gray-500">{t('none')}</span> : <SignalBar quality={r.signal_quality} />}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-gray-300">{r.vowifi_airplane ? <span className="text-amber-400">{t('detail_reg_airplane')}</span> : regLabel(r.registration_state)}</td>
+                  <td className="px-4 py-3">{r.vowifi_airplane ? <span className="text-gray-500">{t('none')}</span> : <SignalBar quality={r.signal_quality} />}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-orange-300">
                     <span className="flex items-center gap-1"><Upload className="w-3 h-3" />{fmtBytes(r.tx_bytes)}</span>
                   </td>

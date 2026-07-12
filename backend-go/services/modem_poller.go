@@ -146,8 +146,9 @@ func poll() {
 		modem.IsActive = true
 		db.Save(&modem)
 
-		// auto-enable disabled modems（带冷却，避免与自身状态转换产生的 D-Bus 事件形成活锁）
-		if info.RawState == "disabled" && !strings.HasPrefix(path, "zte:") {
+		// auto-enable disabled modems（带冷却，避免与自身状态转换产生的 D-Bus 事件形成活锁）。
+		// 跳过飞行模式的卡：用户主动关了射频(power-state-low → disabled)，不能再自动 enable 拉回来。
+		if info.RawState == "disabled" && !strings.HasPrefix(path, "zte:") && !modem.VowifiAirplane {
 			key := info.Imei
 			if key == "" {
 				key = path
@@ -156,6 +157,20 @@ func poll() {
 				lastEnableAttempt[key] = time.Now()
 				slog.Info("auto-enabling disabled modem", "index", info.MmIndex)
 				go EnableModem(info.MmIndex)
+			}
+		}
+
+		// 飞行模式强制：非 VoWiFi 模式(VoWiFi 卡已被 inhibit 不在此)但开了飞行模式，
+		// 若射频还没关(不是 disabled)，主动压到低功耗态。带冷却，纠正遗留状态并防活锁。
+		if modem.VowifiAirplane && !modem.VowifiMode && info.RawState != "disabled" && !strings.HasPrefix(path, "zte:") {
+			key := info.Imei
+			if key == "" {
+				key = path
+			}
+			if last, ok := lastEnableAttempt[key]; !ok || time.Since(last) > enableCooldown {
+				lastEnableAttempt[key] = time.Now()
+				slog.Info("airplane mode: forcing modem to low power", "index", info.MmIndex)
+				go SetModemPowerLow(info.MmIndex)
 			}
 		}
 
