@@ -9,6 +9,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,10 +158,20 @@ func (m *VowifiManager) Stop(modemID uint) {
 		return
 	}
 	c.daemon.Stop()
-	// 关 VoWiFi 时恢复蜂窝(CFUN=1)，否则卡会一直停在飞行态。必须在 release 交还给 MM 之前发。
+	// 关 VoWiFi 时按飞行模式开关决定射频：飞行开=保持射频关(CFUN=4，卡不在蜂窝注册)，
+	// 飞行关=恢复蜂窝(CFUN=1)。必须在 release 交还给 MM 之前发。
+	airplane := false
+	var md models.Modem
+	if database.DB.Select("vowifi_airplane").First(&md, modemID).Error == nil {
+		airplane = md.VowifiAirplane
+	}
+	cfun := 1
+	if airplane {
+		cfun = 4
+	}
 	if c.atPort != "" {
-		if err := vowifi.SetCFUN(c.atPort, 1, vowifiVerbose()); err != nil {
-			fmt.Printf("[vowifi] 卡 %d 恢复蜂窝(CFUN=1)失败: %v\n", modemID, err)
+		if err := vowifi.SetCFUN(c.atPort, cfun, vowifiVerbose()); err != nil {
+			fmt.Printf("[vowifi] 卡 %d 设置 CFUN=%d 失败: %v\n", modemID, cfun, err)
 		}
 	}
 	if c.release != nil {
@@ -168,8 +179,10 @@ func (m *VowifiManager) Stop(modemID uint) {
 	}
 }
 
-// SetAirplane 切换某卡的飞行模式（关/开射频）。持久化到 DB；若会话运行中，立即通过 AT 口
-// 发 CFUN=4/1 生效（VoWiFi 走 IP，不受射频影响，无需重建会话）。未运行则仅保存，下次启动生效。
+// SetAirplane 切换某卡的飞行模式（关/开射频）。持久化到 DB，并立即生效：
+//   - VoWiFi 会话运行中：通过独占的 AT 口发 CFUN=4/1（VoWiFi 走 IP，不受射频影响，无需重建）
+//   - VoWiFi 关闭（卡在 ModemManager 手里）：用 mmcli 切电源态（low=射频关，on=恢复），
+//     这样飞行模式与 WiFi-Calling 解耦，关了 VoWiFi 也能让卡不在蜂窝注册。
 func (m *VowifiManager) SetAirplane(modem *models.Modem, on bool) error {
 	if err := database.DB.Model(&models.Modem{}).Where("id = ?", modem.ID).
 		Update("vowifi_airplane", on).Error; err != nil {
@@ -178,14 +191,26 @@ func (m *VowifiManager) SetAirplane(modem *models.Modem, on bool) error {
 	m.mu.Lock()
 	c := m.cards[modem.ID]
 	m.mu.Unlock()
-	if c == nil || c.atPort == "" {
-		return nil // 会话未运行，仅保存设置，下次启动时应用
+	if c != nil && c.atPort != "" {
+		mode := 1
+		if on {
+			mode = 4
+		}
+		return vowifi.SetCFUN(c.atPort, mode, vowifiVerbose())
 	}
-	mode := 1
+	// 会话未运行：走 mmcli 电源态。定位不到索引则仅保存，下次启动 VoWiFi 时应用。
+	idx := resolveModemIndex(modem.Imei, modem.MmObjectPath)
+	if idx == "" {
+		return nil
+	}
+	state := "on"
 	if on {
-		mode = 4
+		state = "low" // 低功耗态：关射频、保留 SIM，等效 CFUN=4
 	}
-	return vowifi.SetCFUN(c.atPort, mode, vowifiVerbose())
+	if out, err := exec.Command("mmcli", "-m", idx, "--set-power-state-"+state).CombinedOutput(); err != nil {
+		return fmt.Errorf("mmcli 切电源态(%s)失败: %v (%s)", state, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // SendSMS 通过常驻会话发一条 MO 短信；若会话未运行则按需拉起。
@@ -291,8 +316,8 @@ func (m *VowifiManager) StartWatchdog() {
 							ResetModem(idx)
 						}
 						resetAt[mo.ID] = now
-						streak[mo.ID] = 0                  // 复位后从头退避
-						rebuildAt[mo.ID] = now             // 冷却重新计时（默认 3min 后重试，够模块枚举）
+						streak[mo.ID] = 0      // 复位后从头退避
+						rebuildAt[mo.ID] = now // 冷却重新计时（默认 3min 后重试，够模块枚举）
 						continue
 					}
 				}

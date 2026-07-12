@@ -349,10 +349,23 @@ export default function SimDetail() {
               <span className={clsx('w-2 h-2 rounded-full shrink-0', status.dot)} />
               <span className={clsx('text-sm font-semibold shrink-0', status.text)}>WiFi-Calling</span>
               <span className={clsx('text-[11px] shrink-0', status.text)}>· {status.label}</span>
+              {/* 飞行模式：独立常显（与 WiFi-Calling 解耦，关了 VoWiFi 也能让卡不在蜂窝注册）*/}
+              <div className="flex items-center gap-1.5 ml-auto shrink-0" title="飞行模式（关射频，不在蜂窝基站注册）">
+                <span className="text-[11px] text-gray-400">✈️ 飞行</span>
+                <button
+                  onClick={() => saveAirplane(!modem.vowifi_airplane)}
+                  disabled={airSaving}
+                  className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50',
+                    modem.vowifi_airplane ? 'bg-amber-500' : 'bg-gray-600')}
+                >
+                  <span className={clsx('inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                    modem.vowifi_airplane ? 'translate-x-4' : 'translate-x-1')} />
+                </button>
+              </div>
               <button
                 onClick={() => saveVowifi(!modem.vowifi_mode)}
                 disabled={vwSaving}
-                className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0 ml-auto',
+                className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0',
                   modem.vowifi_mode ? 'bg-blue-600' : 'bg-gray-600')}
                 title={t('vowifi_toggle')}
               >
@@ -400,22 +413,6 @@ export default function SimDetail() {
                 {/* 设置：列排布（标签左、控件右）*/}
                 <div className="pt-2.5 border-t border-gray-700/60 space-y-2">
                   <p className="text-[10px] uppercase tracking-wider text-gray-500">{t('vowifi_settings')}</p>
-
-                  {/* 飞行模式：VoWiFi 期间关射频，不在蜂窝基站注册（SIM 仍供电可鉴权）*/}
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <span className="text-gray-300">✈️ 飞行模式</span>
-                    <span className="text-gray-500">关射频，不在蜂窝注册</span>
-                    <button
-                      onClick={() => saveAirplane(!modem.vowifi_airplane)}
-                      disabled={airSaving}
-                      className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0 ml-auto',
-                        modem.vowifi_airplane ? 'bg-amber-500' : 'bg-gray-600')}
-                      title="飞行模式（关射频，不在蜂窝基站注册）"
-                    >
-                      <span className={clsx('inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-                        modem.vowifi_airplane ? 'translate-x-4' : 'translate-x-1')} />
-                    </button>
-                  </div>
 
                   {/* ePDG 地址：标签左、输入右 */}
                   <div className="flex items-center gap-3 text-[11px]">
