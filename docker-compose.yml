@@ -22,6 +22,9 @@ services:
       # VoWiFi：详细日志（排障用）+ USIM AKA 顺序（at=AT优先，QMI兜底）
       - VOWIFI_VERBOSE=${VOWIFI_VERBOSE:-1}
       - VOWIFI_AKA_ORDER=${VOWIFI_AKA_ORDER:-at}
+      # ePDG 动态解析（第二方案）：=1 时用 DoH 解析 ePDG FQDN（绕过 Clash fake-ip），
+      # 校验/追随运营商 ePDG；解析失败自动回退到 vowifi_epdg_ip 配置值
+      - VOWIFI_EPDG_DNS=${VOWIFI_EPDG_DNS:-1}
     privileged: true
     group_add:
       - dialout

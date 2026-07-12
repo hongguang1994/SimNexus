@@ -35,6 +35,12 @@ func buildVowifiConfig(m *models.Modem) (vowifi.Config, error) {
 		return vowifi.Config{}, fmt.Errorf("无法确定 MCC/MNC")
 	}
 	epdg := vwFirstNonEmpty(m.VowifiEpdgIP, os.Getenv("VOWIFI_EPDG_IP"))
+	// 第二方案（opt-in）：VOWIFI_EPDG_DNS=1 时用 DoH 动态解析 ePDG FQDN，
+	// 绕过系统解析器的 Clash fake-ip。解析成功则优先沿用配置里的已知可用 IP
+	//（若它仍在解析结果中，兼顾路由安全），否则取解析到的第一个；解析失败回退配置值。
+	if os.Getenv("VOWIFI_EPDG_DNS") == "1" {
+		epdg = resolveEpdgWithFallback(epdg, mcc, mnc)
+	}
 	if epdg == "" {
 		return vowifi.Config{}, fmt.Errorf("未配置 ePDG 地址（modem.vowifi_epdg_ip 或环境变量 VOWIFI_EPDG_IP）")
 	}
@@ -158,6 +164,33 @@ func splitMCCMNC(opCode, imsi string) (string, string) {
 		return imsi[:3], imsi[3:5]
 	}
 	return "", ""
+}
+
+// resolveEpdgWithFallback 用 DoH 动态解析 ePDG，解析成功时：
+//   - 若配置的 static 仍在解析结果中，保留 static（已验证可用 + 路由已知安全）；
+//   - 否则改用解析到的第一个 IP（说明运营商更换了 ePDG，static 已过期）。
+//
+// 解析失败或无结果则原样返回 static，绝不阻断发送。
+func resolveEpdgWithFallback(static, mcc, mnc string) string {
+	ips, err := vowifi.ResolveEPDG(mcc, mnc, 8*time.Second)
+	if err != nil || len(ips) == 0 {
+		if os.Getenv("VOWIFI_VERBOSE") != "" {
+			fmt.Printf("[vowifi] ePDG 动态解析失败，回退配置值 %s：%v\n", static, err)
+		}
+		return static
+	}
+	for _, ip := range ips {
+		if ip == static {
+			if os.Getenv("VOWIFI_VERBOSE") != "" {
+				fmt.Printf("[vowifi] ePDG 动态解析确认 %s 仍有效（候选 %v）\n", static, ips)
+			}
+			return static
+		}
+	}
+	if os.Getenv("VOWIFI_VERBOSE") != "" {
+		fmt.Printf("[vowifi] ePDG 配置值 %s 已不在解析结果，改用 %s（候选 %v）\n", static, ips[0], ips)
+	}
+	return ips[0]
 }
 
 func vwFirstNonEmpty(vals ...string) string {
