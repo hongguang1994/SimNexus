@@ -1,9 +1,9 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Send, Clock, MessageSquare, Cpu, CreditCard,
+  LayoutDashboard, Send, MessageSquare, Cpu, CreditCard,
   Users, LogOut, Sun, Moon, Monitor, ChevronDown, User, KeyRound, X, ShieldCheck,
   Wifi, RefreshCw, ArrowUp, MessageCircle, PanelLeftClose, PanelLeftOpen,
-  Bell, WifiOff, AlertTriangle, UserPlus, CheckCheck, Activity, Shield, FileText, ClipboardCheck, Database, Bot, ScrollText,
+  Bell, WifiOff, AlertTriangle, UserPlus, CheckCheck, Activity, Shield, ClipboardCheck, Database, Bot, ScrollText, Contact,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useModemStore } from '../store/modemStore'
@@ -644,25 +644,17 @@ export default function Layout() {
             {/* ── 短信 ───────────────────────────────────── */}
             <NavGroup
               label={t('layout_group_sms')}
-              routes={['/templates', '/history', '/tasks', '/admin/tasks']}
+              routes={['/history', '/contacts', '/admin/tasks']}
               sideCollapsed={sideCollapsed}
             >
-              {!p.read_only && (
-                <NavLink to="/templates" className={navLinkCls} title={sideCollapsed ? t('layout_templates') : undefined}>
-                  <FileText className="w-4 h-4 shrink-0" />
-                  {!sideCollapsed && <span>{t('layout_templates')}</span>}
-                </NavLink>
-              )}
               <NavLink to="/history" className={navLinkCls} title={sideCollapsed ? t('nav_history') : undefined}>
                 <MessageSquare className="w-4 h-4 shrink-0" />
                 {!sideCollapsed && <span>{t('nav_history')}</span>}
               </NavLink>
-              {!p.read_only && (
-                <NavLink to="/tasks" className={navLinkCls} title={sideCollapsed ? t('nav_tasks') : undefined}>
-                  <Clock className="w-4 h-4 shrink-0" />
-                  {!sideCollapsed && <span>{t('nav_tasks')}</span>}
-                </NavLink>
-              )}
+              <NavLink to="/contacts" className={navLinkCls} title={sideCollapsed ? t('nav_contacts') : undefined}>
+                <Contact className="w-4 h-4 shrink-0" />
+                {!sideCollapsed && <span>{t('nav_contacts')}</span>}
+              </NavLink>
               {(user?.role === 'admin' || !p.read_only) && (
                 <NavLink to="/admin/tasks" className={navLinkCls} title={sideCollapsed ? t('nav_admin_tasks') : undefined}>
                   <Activity className="w-4 h-4 shrink-0" />

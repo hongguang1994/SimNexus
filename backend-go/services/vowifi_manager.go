@@ -28,6 +28,14 @@ type vowifiCard struct {
 
 func vowifiVerbose() bool { return os.Getenv("VOWIFI_VERBOSE") != "" }
 
+// vlog 打印一条 VoWiFi 业务日志到 stdout（带 [vowifi] 前缀），同时汇入日志缓冲区（category=vowifi）
+// 供 WebSocket 实时推给前端。区别于 vowifi 包内 Session.logf 的建链细节日志。
+func vlog(format string, a ...any) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("[vowifi] %s\n", msg)
+	GlobalLog.AppendVowifi("INFO", msg)
+}
+
 // VowifiManager 单例，持有所有常驻 VoWiFi 会话。
 type VowifiManager struct {
 	mu       sync.Mutex
@@ -116,7 +124,7 @@ func (m *VowifiManager) Start(modem *models.Modem) error {
 	// 失败不阻断（个别固件 CFUN=4 会关 SIM，那样就退回不关射频，仍能跑 VoWiFi）。
 	if cfg.ATPort != "" && modem.VowifiAirplane {
 		if err := vowifi.SetCFUN(cfg.ATPort, 4, vowifiVerbose()); err != nil {
-			fmt.Printf("[vowifi] 卡 %d 进飞行(CFUN=4)失败(不阻断): %v\n", modem.ID, err)
+			vlog("卡 %d 进飞行(CFUN=4)失败(不阻断): %v", modem.ID, err)
 		} else {
 			time.Sleep(2 * time.Second) // 等模块完成 detach
 		}
@@ -141,7 +149,7 @@ func (m *VowifiManager) Start(modem *models.Modem) error {
 	if info := daemon.Info(); info.MSISDN != "" {
 		if err := database.DB.Model(&models.Modem{}).Where("id = ?", mID).
 			Update("phone_number", info.MSISDN).Error; err != nil {
-			fmt.Printf("[vowifi] 回写卡 %d 号码失败: %v\n", mID, err)
+			vlog("回写卡 %d 号码失败: %v", mID, err)
 		}
 	}
 	return nil
@@ -171,7 +179,7 @@ func (m *VowifiManager) Stop(modemID uint) {
 	}
 	if c.atPort != "" {
 		if err := vowifi.SetCFUN(c.atPort, cfun, vowifiVerbose()); err != nil {
-			fmt.Printf("[vowifi] 卡 %d 设置 CFUN=%d 失败: %v\n", modemID, cfun, err)
+			vlog("卡 %d 设置 CFUN=%d 失败: %v", modemID, cfun, err)
 		}
 	}
 	if c.release != nil {
@@ -242,7 +250,7 @@ func (m *VowifiManager) SyncOne(modem *models.Modem) {
 	if modem.VowifiMode {
 		if err := m.Start(modem); err != nil {
 			// 启动失败不阻断 API；日志留痕即可
-			fmt.Printf("[vowifi] 启动卡 %d 会话失败: %v\n", modem.ID, err)
+			vlog("启动卡 %d 会话失败: %v", modem.ID, err)
 		}
 	} else {
 		m.Stop(modem.ID)
@@ -309,7 +317,7 @@ func (m *VowifiManager) StartWatchdog() {
 				if streak[mo.ID] >= 3 {
 					if last, ok := resetAt[mo.ID]; !ok || now.Sub(last) > 10*time.Minute {
 						idx := resolveModemIndex(mo.Imei, mo.MmObjectPath)
-						fmt.Printf("[vowifi] 看门狗：卡 %d 连续%d次拉起失败，硬复位模块(idx=%q)清 USIM/QMI 卡死\n", mo.ID, streak[mo.ID], idx)
+						vlog("看门狗：卡 %d 连续%d次拉起失败，硬复位模块(idx=%q)清 USIM/QMI 卡死", mo.ID, streak[mo.ID], idx)
 						Push("vowifi_down", "VoWiFi 模块硬复位",
 							fmt.Sprintf("卡#%d 软重试无效，正在硬复位模块自愈", mo.ID), "admin", nil)
 						if idx != "" {
@@ -324,9 +332,9 @@ func (m *VowifiManager) StartWatchdog() {
 				if t, ok := rebuildAt[mo.ID]; ok && now.Sub(t) < cooldown {
 					continue
 				}
-				fmt.Printf("[vowifi] 看门狗：卡 %d 应运行但未运行，自动拉起\n", mo.ID)
+				vlog("看门狗：卡 %d 应运行但未运行，自动拉起", mo.ID)
 				if err := m.Start(&mo); err != nil {
-					fmt.Printf("[vowifi] 看门狗：卡 %d 拉起失败: %v\n", mo.ID, err)
+					vlog("看门狗：卡 %d 拉起失败: %v", mo.ID, err)
 					rebuildAt[mo.ID] = time.Now()
 					streak[mo.ID]++
 				} else {
@@ -362,12 +370,12 @@ func (m *VowifiManager) StartWatchdog() {
 				if database.DB.First(&modem, c.id).Error != nil || !modem.VowifiMode {
 					continue // 卡已删除或已退出 VoWiFi 模式，不重建
 				}
-				fmt.Printf("[vowifi] 看门狗：卡 %d 会话疑似已死(静默 %v)，自愈重建\n", c.id, silent.Round(time.Second))
+				vlog("看门狗：卡 %d 会话疑似已死(静默 %v)，自愈重建", c.id, silent.Round(time.Second))
 				Push("vowifi_down", "VoWiFi 会话重建",
 					fmt.Sprintf("卡#%d(%s) 会话疑似断开，正在自愈重建", c.id, modemLabel(&modem)), "admin", nil)
 				m.Stop(c.id)
 				if err := m.Start(&modem); err != nil {
-					fmt.Printf("[vowifi] 看门狗：卡 %d 重建失败: %v\n", c.id, err)
+					vlog("看门狗：卡 %d 重建失败: %v", c.id, err)
 				}
 				rebuildAt[c.id] = time.Now()
 				streak[c.id]++
@@ -390,7 +398,7 @@ func (m *VowifiManager) StartEnabled() {
 					return
 				}
 				if err := m.Start(&mo); err != nil {
-					fmt.Printf("[vowifi] 开机启动卡 %d 会话失败(第%d次): %v\n", mo.ID, attempt+1, err)
+					vlog("开机启动卡 %d 会话失败(第%d次): %v", mo.ID, attempt+1, err)
 					time.Sleep(time.Duration(10+attempt*10) * time.Second) // 10s,20s,30s,40s 退避
 					continue
 				}

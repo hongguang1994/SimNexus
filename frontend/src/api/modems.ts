@@ -35,6 +35,7 @@ export interface VowifiStep {
 
 export interface VowifiSessionInfo {
   epdg_ip: string
+  epdg_from_dns: boolean
   tunnel_ipv6: string
   pcscf_count: number
   registered: boolean

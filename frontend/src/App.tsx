@@ -2,14 +2,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import MessageCenter from './pages/MessageCenter'
-import ScheduledTasks from './pages/ScheduledTasks'
+import Contacts from './pages/Contacts'
 import SimDetail from './pages/SimDetail'
 import SimCards from './pages/SimCards'
 import Users from './pages/Users'
 import Roles from './pages/Roles'
 import SupportAdmin from './pages/SupportAdmin'
 import AdminTasks from './pages/AdminTasks'
-import Templates from './pages/Templates'
 import SimRequests from './pages/SimRequests'
 import MyRequests from './pages/MyRequests'
 import ResourceLibrary from './pages/ResourceLibrary'
@@ -52,13 +51,11 @@ export default function App() {
           <Route path="/sim-cards" element={<SimCards />} />
           <Route path="/modems/:id" element={<SimDetail />} />
           <Route path="/history" element={<MessageCenter />} />
-          <Route path="/tasks" element={<ScheduledTasks />} />
+          <Route path="/contacts" element={<Contacts />} />
           <Route path="/users" element={<RequireAdmin><Users /></RequireAdmin>} />
           <Route path="/roles" element={<RequireAdmin><Roles /></RequireAdmin>} />
           <Route path="/support" element={<RequireSupport><SupportAdmin /></RequireSupport>} />
-          <Route path="/admin/tasks" element={<AdminTasks />} />
-          <Route path="/templates" element={<Templates />} />
-          <Route path="/my-requests" element={<MyRequests />} />
+          <Route path="/admin/tasks" element={<AdminTasks />} />          <Route path="/my-requests" element={<MyRequests />} />
           <Route path="/resources" element={<ResourceLibrary />} />
           <Route path="/admin/sim-requests" element={<RequireApprove><SimRequests /></RequireApprove>} />
           <Route path="/admin/telegram" element={<RequireAdmin><TelegramAdmin /></RequireAdmin>} />

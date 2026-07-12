@@ -24,6 +24,7 @@ import (
 	_ "simnexus-go/docs"
 	"simnexus-go/router"
 	"simnexus-go/services"
+	"simnexus-go/services/vowifi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,6 +34,8 @@ func main() {
 	// 初始化双写日志：同时输出到 stdout 和内存缓冲区（供 SSE 日志流使用）
 	inner := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 	slog.SetDefault(slog.New(services.NewBufferedHandler(inner)))
+	// VoWiFi 协议栈的建链细节日志（Session.logf）汇入日志缓冲，category=vowifi，供前端实时查看
+	vowifi.LogHook = func(msg string) { services.GlobalLog.AppendVowifi("DEBUG", msg) }
 
 	cfg := config.Load()
 	database.Init(cfg)

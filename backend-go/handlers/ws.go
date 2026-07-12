@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -70,6 +71,61 @@ func MessageWS(c *gin.Context) {
 		}
 		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			return
+		}
+	}
+}
+
+// LogsWS 通过 WebSocket 把后端各类日志（HTTP/VoWiFi/Poller/Scheduler/Telegram/System）
+// 实时推给前端日志页。先补发历史缓冲，再流式推送新日志。仅管理员可订阅。
+func LogsWS(c *gin.Context) {
+	token := c.Query("token")
+	username, err := security.ParseToken(token)
+	if err != nil {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	user, err := security.LoadUserByUsername(database.DB, username)
+	if err != nil || !user.IsAdmin() {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
+	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	// 读泵：检测客户端断开
+	go func() {
+		for {
+			if _, _, e := conn.ReadMessage(); e != nil {
+				cancel()
+				conn.Close()
+				return
+			}
+		}
+	}()
+
+	// 先补发历史缓冲
+	for _, e := range services.GlobalLog.Snapshot() {
+		data, _ := json.Marshal(e)
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if conn.WriteMessage(websocket.TextMessage, data) != nil {
+			return
+		}
+	}
+
+	// 订阅新日志并推送
+	ch := services.GlobalLog.Subscribe(ctx)
+	for e := range ch {
+		data, _ := json.Marshal(e)
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if conn.WriteMessage(websocket.TextMessage, data) != nil {
 			return
 		}
 	}

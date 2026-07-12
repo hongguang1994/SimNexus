@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { format, isToday, isYesterday } from 'date-fns'
-import { Send, Search, MessageSquare, Wifi, Radio, RefreshCw, PenSquare, X, Loader2, ChevronLeft } from 'lucide-react'
+import { Send, Search, MessageSquare, Wifi, Radio, RefreshCw, PenSquare, X, Loader2, ChevronLeft, Clock } from 'lucide-react'
 import clsx from 'clsx'
-import { getMessagesApi, sendSmsApi, SmsMessage } from '../api/sms'
+import { getMessagesApi, sendSmsApi, SmsMessage, getTasksApi, createTaskApi, deleteTaskApi, ScheduledTask } from '../api/sms'
+import { getContactsApi, Contact } from '../api/contacts'
 import { useModemStore } from '../store/modemStore'
 import { useAuthStore } from '../store/authStore'
 import { useT } from '../i18n'
@@ -64,13 +66,54 @@ export default function MessageCenter() {
     return () => mq.removeEventListener('change', on)
   }, [])
   const threadRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+  const navigate = useNavigate()
   // 新建消息（类 Apple 信息）：选卡 + 输入号码 + 发送
   const [composing, setComposing] = useState(false)
   const [composeCard, setComposeCard] = useState<number | ''>('')
   const [composeTo, setComposeTo] = useState('')
   const [composeText, setComposeText] = useState('')
+  // 定时发送：待发的单次任务（send_once_at 且仍 active），内联为会话里的“待发”气泡
+  const [tasks, setTasks] = useState<ScheduledTask[]>([])
+  const [scheduleCtx, setScheduleCtx] = useState<null | 'reply' | 'compose'>(null) // 哪个发送栏在定时
+  const [scheduleAt, setScheduleAt] = useState('') // datetime-local 值
+  const [scheduling, setScheduling] = useState(false)
+  // 通讯录：号码命中则显示联系人姓名（类 iMessage）
+  const [contacts, setContacts] = useState<Contact[]>([])
+  useEffect(() => { getContactsApi().then(r => setContacts(r.data)).catch(() => {}) }, [])
+  const contactByPhone = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of contacts) {
+      const n = (c.phone || '').replace(/\D/g, '')
+      if (n && c.name.trim()) m.set(n, c.name.trim())
+    }
+    return m
+  }, [contacts])
+  // 号码 → 显示名：优先精确匹配（去掉非数字），退化到后 8 位后缀匹配（容忍国家码差异）
+  const displayName = (number: string): string => {
+    const n = (number || '').replace(/\D/g, '')
+    if (!n) return number
+    const hit = contactByPhone.get(n)
+    if (hit) return hit
+    if (n.length >= 8) {
+      const suf = n.slice(-8)
+      for (const [k, name] of contactByPhone) if (k.endsWith(suf)) return name
+    }
+    return number
+  }
+  // 头像：命中联系人时用姓名首字，否则用号码后两位
+  const avatarOf = (number: string) => {
+    const dn = displayName(number)
+    const av = avatarFor(number)
+    return dn === number ? av : { label: dn.trim()[0]?.toUpperCase() || av.label, color: av.color }
+  }
+
+  const loadTasks = async () => {
+    try { setTasks((await getTasksApi()).data) } catch { /* ignore */ }
+  }
 
   const load = async () => {
+    loadTasks()
     try {
       const r = await getMessagesApi({ limit: 1000 })
       // 保留尚未落库的“发送中”乐观气泡（临时负 id），直到服务端出现等价记录再让其消失，
@@ -90,6 +133,16 @@ export default function MessageCenter() {
     return () => clearInterval(timer)
   }, [])
 
+  // 从通讯录「发送信息」跳来：预填号码并打开新建消息
+  useEffect(() => {
+    const to = (location.state as any)?.composeTo
+    if (!to) return
+    setComposing(true); setSelected(null); setComposeTo(String(to)); setComposeText('')
+    const first = modems.find(m => m.status === 'connected' || m.status === 'disconnected')
+    if (first) setComposeCard(prev => (prev === '' ? first.id : prev))
+    navigate('.', { replace: true, state: null }) // 清掉 state，避免返回/刷新重复触发
+  }, [location.state]) // eslint-disable-line
+
   // WebSocket 实时接收新短信（MT 收 / MO 发），无需等轮询
   const token = useAuthStore(s => s.token)
   useEffect(() => {
@@ -97,8 +150,8 @@ export default function MessageCenter() {
     let ws: WebSocket | null = null
     let closed = false
     const connect = () => {
-      const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-      ws = new WebSocket(`${protocol}://${location.host}/ws/messages?token=${token}`)
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      ws = new WebSocket(`${protocol}://${window.location.host}/ws/messages?token=${token}`)
       ws.onmessage = e => {
         try {
           const m = JSON.parse(e.data) as SmsMessage
@@ -124,8 +177,23 @@ export default function MessageCenter() {
     return () => { closed = true; ws?.close() }
   }, [token])
 
+  // 待发的定时消息：单次(send_once_at)且仍 active 的任务，按 (卡+每个收件人) 归到对应会话。
+  const scheduledByKey = useMemo(() => {
+    const map = new Map<string, ScheduledTask[]>()
+    for (const tk of tasks) {
+      if (tk.status !== 'active' || !tk.send_once_at) continue
+      for (const r of tk.recipients || []) {
+        const k = `${tk.modem_id}|${r}`
+        if (!map.has(k)) map.set(k, [])
+        map.get(k)!.push(tk)
+      }
+    }
+    for (const arr of map.values()) arr.sort((a, b) => +new Date(a.send_once_at!) - +new Date(b.send_once_at!))
+    return map
+  }, [tasks])
+
   // 按 (卡 + 对端号码) 分组成会话——系统管理多张卡，不同卡发给同一号码是不同的会话；
-  // 会话 key = `${modemId}|${number}`，按最新消息时间倒序。
+  // 会话 key = `${modemId}|${number}`，按最新活动时间倒序。同时并入“只有定时待发、还没消息”的会话。
   const conversations = useMemo(() => {
     const map = new Map<string, SmsMessage[]>()
     for (const m of messages) {
@@ -133,14 +201,23 @@ export default function MessageCenter() {
       if (!map.has(k)) map.set(k, [])
       map.get(k)!.push(m)
     }
+    // 并入仅有定时待发的会话 key（没有历史消息也要出现在列表里）
+    for (const k of scheduledByKey.keys()) if (!map.has(k)) map.set(k, [])
+
     const list = [...map.entries()].map(([key, msgs]) => {
       msgs.sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))
       const last = msgs[msgs.length - 1]
-      return { key, number: last.phone_number || t('unknown'), modemId: last.modem_id, msgs, last }
+      const scheduled = scheduledByKey.get(key) || []
+      const [mid, ...rest] = key.split('|')
+      const number = last?.phone_number || rest.join('|') || t('unknown')
+      const modemId = last?.modem_id ?? Number(mid)
+      // 排序时间：有消息用最后消息时间；否则用最早的定时时间
+      const sortAt = last?.created_at || scheduled[0]?.send_once_at || new Date(0).toISOString()
+      return { key, number, modemId, msgs, last, scheduled, sortAt }
     })
-    list.sort((a, b) => +new Date(b.last.created_at) - +new Date(a.last.created_at))
+    list.sort((a, b) => +new Date(b.sortAt) - +new Date(a.sortAt))
     return list
-  }, [messages, t])
+  }, [messages, scheduledByKey, t])
 
   // 会话里出现过的卡 id（用于顶部筛选器，只在有多张卡时才显示）
   const cardIds = useMemo(() => [...new Set(conversations.map(c => c.modemId))], [conversations])
@@ -150,10 +227,10 @@ export default function MessageCenter() {
     if (cardFilter !== 'all') list = list.filter(c => c.modemId === cardFilter)
     if (query.trim()) {
       const q = query.trim().toLowerCase()
-      list = list.filter(c => c.number.toLowerCase().includes(q) || c.msgs.some(m => m.content.toLowerCase().includes(q)))
+      list = list.filter(c => c.number.toLowerCase().includes(q) || displayName(c.number).toLowerCase().includes(q) || c.msgs.some(m => m.content.toLowerCase().includes(q)))
     }
     return list
-  }, [conversations, query, cardFilter])
+  }, [conversations, query, cardFilter, contactByPhone])
 
   // 默认选中第一个会话（手机上不自动选，先展示列表，点了才进会话）
   useEffect(() => {
@@ -198,6 +275,52 @@ export default function MessageCenter() {
     setInput('')
     doSend(current.modemId, current.number, text)
   }
+
+  // 定时发送：把当前发送栏的内容排成一个单次任务（send_once_at 存 UTC）。
+  const submitSchedule = async () => {
+    if (!scheduleAt) return
+    let modemId = 0, to = '', text = ''
+    if (scheduleCtx === 'reply' && current) { modemId = current.modemId; to = current.number; text = input.trim() }
+    else if (scheduleCtx === 'compose') { modemId = Number(composeCard); to = composeTo.replace(/\s+/g, ''); text = composeText.trim() }
+    if (!modemId || !to || !text) return
+    setScheduling(true)
+    try {
+      await createTaskApi({
+        name: `${t('nav_history')} · ${to}`,
+        modem_id: modemId,
+        recipients: [to],
+        content: text,
+        send_once_at: new Date(scheduleAt).toISOString(), // datetime-local(本地) → UTC ISO
+      })
+      await loadTasks()
+      if (scheduleCtx === 'reply') setInput('')
+      else { setComposeText(''); setComposing(false); setSelected(`${modemId}|${to}`) }
+      setScheduleCtx(null); setScheduleAt('')
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || e?.response?.data?.msg || t('sms_fail_default'))
+    } finally { setScheduling(false) }
+  }
+
+  // 取消一条待发的定时消息（删任务）。
+  const cancelScheduled = async (id: number) => {
+    try { await deleteTaskApi(id); await loadTasks() } catch { /* ignore */ }
+  }
+
+  // datetime-local 的最小值 = 现在（本地时区），禁止选过去时间。
+  const nowLocal = () => {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    return d.toISOString().slice(0, 16)
+  }
+  // 打开定时时的默认时间：一小时后（本地时区），避免面板出现时是空的。
+  const defaultScheduleLocal = () => {
+    const d = new Date(Date.now() + 60 * 60000 - new Date().getTimezoneOffset() * 60000)
+    return d.toISOString().slice(0, 16)
+  }
+  const toggleSchedule = (ctx: 'reply' | 'compose') => {
+    if (scheduleCtx === ctx) { setScheduleCtx(null); setScheduleAt('') }
+    else { setScheduleCtx(ctx); if (!scheduleAt) setScheduleAt(defaultScheduleLocal()) }
+  }
+  const fmtSchedule = (iso: string) => format(new Date(iso), 'MM/dd HH:mm')
 
   // 可发送的卡：在线/离线均可选（排除异常状态），默认选第一张
   const sendableModems = modems.filter(m => m.status === 'connected' || m.status === 'disconnected')
@@ -267,7 +390,7 @@ export default function MessageCenter() {
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-gray-500 text-sm">{loading ? '…' : t('msg_empty')}</div>
           ) : filtered.map(c => {
-            const a = avatarFor(c.number)
+            const a = avatarOf(c.number)
             const active = c.key === selected
             return (
               <button key={c.key} onClick={() => { setSelected(c.key); setComposing(false) }}
@@ -275,15 +398,24 @@ export default function MessageCenter() {
                 <div className={clsx('w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0', a.color)}>{a.label}</div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-white truncate flex-1">{c.number}</span>
-                    <span className="text-[11px] text-gray-500 shrink-0">{convTime(c.last.created_at)}</span>
+                    <span className="text-sm font-medium text-white truncate flex-1">{displayName(c.number)}</span>
+                    <span className="text-[11px] text-gray-500 shrink-0">{c.last ? convTime(c.last.created_at) : (c.scheduled[0] && fmtSchedule(c.scheduled[0].send_once_at!))}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className={clsx('shrink-0 px-1.5 py-0.5 rounded text-[10px] border', cardTint(c.modemId))}>{modemName(c.modemId)}</span>
-                    <span className="text-xs text-gray-400 truncate">
-                      {c.last.direction === 'outbound' && <span className="text-gray-500">{t('msg_you')}: </span>}
-                      {c.last.content}
-                    </span>
+                    {c.last ? (
+                      <span className="text-xs text-gray-400 truncate">
+                        {c.last.direction === 'outbound' && <span className="text-gray-500">{t('msg_you')}: </span>}
+                        {c.last.content}
+                      </span>
+                    ) : c.scheduled.length > 0 ? (
+                      <span className="text-xs text-blue-300/80 truncate flex items-center gap-1">
+                        <Clock className="w-3 h-3 shrink-0" />{c.scheduled[0].content}
+                      </span>
+                    ) : null}
+                    {c.last && c.scheduled.length > 0 && (
+                      <Clock className="w-3 h-3 text-blue-400 shrink-0" />
+                    )}
                   </div>
                 </div>
               </button>
@@ -318,15 +450,39 @@ export default function MessageCenter() {
               </label>
             </div>
             <div className="flex-1" />
-            <div className="p-3 flex items-end gap-2">
-              <textarea value={composeText} onChange={e => setComposeText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCompose() } }}
-                rows={1} placeholder={t('msg_reply_ph')}
-                className="flex-1 resize-none bg-gray-800 border border-gray-600 rounded-xl px-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 max-h-32" />
-              <button onClick={sendCompose} disabled={!composeTo.trim() || !composeText.trim() || composeCard === ''}
-                className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/50 disabled:opacity-70 transition-all">
-                <Send className="w-4 h-4" />
-              </button>
+            <div className="p-3">
+              <div className={clsx('flex flex-col rounded-2xl transition-colors',
+                scheduleCtx === 'compose' && 'border border-dashed border-blue-400/70 bg-blue-500/5')}>
+                {scheduleCtx === 'compose' && (
+                  <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                    <Clock className="w-4 h-4 text-blue-400 shrink-0" />
+                    <input type="datetime-local" min={nowLocal()} value={scheduleAt} onChange={e => setScheduleAt(e.target.value)}
+                      className="flex-1 min-w-0 bg-transparent text-blue-300 text-sm font-medium focus:outline-none [color-scheme:dark]" />
+                    <button onClick={() => { setScheduleCtx(null); setScheduleAt('') }} className="shrink-0 p-1 text-blue-300/70 hover:text-white"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                <div className="flex items-end gap-2 p-1">
+                  <button onClick={() => toggleSchedule('compose')}
+                    title={t('msg_schedule_send')}
+                    className={clsx('shrink-0 w-9 h-9 flex items-center justify-center rounded-full transition-colors',
+                      scheduleCtx === 'compose' ? 'text-blue-400' : 'text-gray-400 hover:text-blue-300 hover:bg-blue-500/10')}>
+                    <Clock className="w-4 h-4" />
+                  </button>
+                  <textarea value={composeText} onChange={e => setComposeText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); scheduleCtx === 'compose' ? submitSchedule() : sendCompose() } }}
+                    rows={1} placeholder={scheduleCtx === 'compose' ? t('msg_send_later') : t('msg_reply_ph')}
+                    className={clsx('flex-1 resize-none rounded-xl px-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none max-h-32',
+                      scheduleCtx === 'compose' ? 'bg-transparent' : 'bg-gray-800 border border-gray-600 focus:border-blue-500')} />
+                  <button
+                    onClick={() => scheduleCtx === 'compose' ? submitSchedule() : sendCompose()}
+                    disabled={scheduleCtx === 'compose'
+                      ? (!scheduleAt || !composeTo.trim() || !composeText.trim() || composeCard === '' || scheduling)
+                      : (!composeTo.trim() || !composeText.trim() || composeCard === '')}
+                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/50 disabled:opacity-70 transition-all">
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </>
         ) : current ? (
@@ -336,8 +492,11 @@ export default function MessageCenter() {
                 className="md:hidden absolute left-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-700/50">
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className={clsx('w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold', avatarFor(current.number).color)}>{avatarFor(current.number).label}</div>
-              <div className="text-sm font-semibold text-white truncate max-w-[80%] text-center">{current.number}</div>
+              <div className={clsx('w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold', avatarOf(current.number).color)}>{avatarOf(current.number).label}</div>
+              <div className="text-sm font-semibold text-white truncate max-w-[80%] text-center">{displayName(current.number)}</div>
+              {displayName(current.number) !== current.number && (
+                <div className="text-[11px] text-gray-500 font-mono">{current.number}</div>
+              )}
               <span className={clsx('px-1.5 py-0.5 rounded text-[10px] border', cardTint(current.modemId))}>{modemName(current.modemId)}</span>
             </header>
 
@@ -370,22 +529,60 @@ export default function MessageCenter() {
                   </div>
                 )
               })}
+
+              {/* 待发的定时消息（右对齐、虚线、时钟标记，可取消）*/}
+              {current.scheduled.map(tk => (
+                <div key={`sch-${tk.id}`} className="flex justify-end">
+                  <div className="max-w-[70%] rounded-2xl px-3.5 py-2 text-sm break-words bg-blue-500/10 text-blue-100 border border-dashed border-blue-400/50">
+                    <div className="whitespace-pre-wrap">{tk.content}</div>
+                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-blue-200/80 justify-end">
+                      <Clock className="w-3 h-3" />
+                      <span>{t('msg_scheduled_at')} {fmtSchedule(tk.send_once_at!)}</span>
+                      <button onClick={() => cancelScheduled(tk.id)} className="ml-1 hover:text-red-300" title={t('cancel')}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {/* 回复框 */}
-            <div className="p-3 flex items-end gap-2">
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); reply() } }}
-                rows={1}
-                placeholder={t('msg_reply_ph')}
-                className="flex-1 resize-none bg-gray-800 border border-gray-600 rounded-xl px-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 max-h-32"
-              />
-              <button onClick={reply} disabled={!input.trim()}
-                className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/50 disabled:opacity-70 transition-all">
-                <Send className="w-4 h-4" />
-              </button>
+            {/* 回复框（Apple「稍后发送」风格：定时时整框变蓝色虚线，顶部内嵌可分段编辑的日期）*/}
+            <div className="p-3">
+              <div className={clsx('flex flex-col rounded-2xl transition-colors',
+                scheduleCtx === 'reply' && 'border border-dashed border-blue-400/70 bg-blue-500/5')}>
+                {scheduleCtx === 'reply' && (
+                  <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                    <Clock className="w-4 h-4 text-blue-400 shrink-0" />
+                    <input type="datetime-local" min={nowLocal()} value={scheduleAt} onChange={e => setScheduleAt(e.target.value)}
+                      className="flex-1 min-w-0 bg-transparent text-blue-300 text-sm font-medium focus:outline-none [color-scheme:dark]" />
+                    <button onClick={() => { setScheduleCtx(null); setScheduleAt('') }} className="shrink-0 p-1 text-blue-300/70 hover:text-white"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                <div className="flex items-end gap-2 p-1">
+                  <button onClick={() => toggleSchedule('reply')}
+                    title={t('msg_schedule_send')}
+                    className={clsx('shrink-0 w-9 h-9 flex items-center justify-center rounded-full transition-colors',
+                      scheduleCtx === 'reply' ? 'text-blue-400' : 'text-gray-400 hover:text-blue-300 hover:bg-blue-500/10')}>
+                    <Clock className="w-4 h-4" />
+                  </button>
+                  <textarea
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); scheduleCtx === 'reply' ? submitSchedule() : reply() } }}
+                    rows={1}
+                    placeholder={scheduleCtx === 'reply' ? t('msg_send_later') : t('msg_reply_ph')}
+                    className={clsx('flex-1 resize-none rounded-xl px-3.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none max-h-32',
+                      scheduleCtx === 'reply' ? 'bg-transparent' : 'bg-gray-800 border border-gray-600 focus:border-blue-500')}
+                  />
+                  <button
+                    onClick={() => scheduleCtx === 'reply' ? submitSchedule() : reply()}
+                    disabled={scheduleCtx === 'reply' ? (!scheduleAt || !input.trim() || scheduling) : !input.trim()}
+                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/50 disabled:opacity-70 transition-all">
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </>
         ) : (

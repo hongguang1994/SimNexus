@@ -4,16 +4,48 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
 
-// LogEntry 是一条结构化日志记录，用于 SSE 流推送给前端。
+// LogEntry 是一条结构化日志记录，用于实时推送给前端（WebSocket / SSE）。
 type LogEntry struct {
-	Time  string `json:"time"`
-	Level string `json:"level"`
-	Msg   string `json:"msg"`
-	Attrs string `json:"attrs,omitempty"` // 附加属性 JSON，可能为空
+	Time     string `json:"time"`
+	Level    string `json:"level"`
+	Category string `json:"category"` // http/vowifi/poller/scheduler/telegram/system
+	Msg      string `json:"msg"`
+	Attrs    string `json:"attrs,omitempty"` // 附加属性 JSON，可能为空
+}
+
+// categorizeMsg 依据日志消息内容归类（用于没有显式 cat 属性的 slog 日志）。
+func categorizeMsg(msg string) string {
+	m := strings.ToLower(msg)
+	switch {
+	case strings.Contains(m, "task") || strings.Contains(m, "cron") || strings.Contains(m, "scheduler"):
+		return "scheduler"
+	case strings.Contains(m, "telegram"):
+		return "telegram"
+	case strings.Contains(m, "modem") || strings.Contains(m, "dbus") || strings.Contains(m, "poller") ||
+		strings.Contains(m, "airplane") || strings.Contains(m, "enable") || strings.Contains(m, "reset") ||
+		strings.Contains(m, "sim-missing") || strings.Contains(m, "power"):
+		return "poller"
+	default:
+		return "system"
+	}
+}
+
+// AppendVowifi 供 VoWiFi 协议栈（非 slog 的 fmt 输出）把日志汇入缓冲区，归类为 vowifi。
+func (b *LogBuffer) AppendVowifi(level, msg string) {
+	if level == "" {
+		level = "DEBUG"
+	}
+	b.Append(LogEntry{
+		Time:     time.Now().UTC().Format(time.RFC3339),
+		Level:    level,
+		Category: "vowifi",
+		Msg:      msg,
+	})
 }
 
 // LogBuffer 环形日志缓冲区，保存最近 cap 条日志并向所有订阅者广播新日志。
@@ -94,16 +126,25 @@ func (h *BufferedHandler) Handle(ctx context.Context, r slog.Record) error {
 		attrs[a.Key] = a.Value.Any()
 		return true
 	})
+	// 分类：优先取显式 cat 属性（如 HTTP 中间件打的 cat=http），否则按消息内容归类。
+	cat := ""
+	if c, ok := attrs["cat"].(string); ok && c != "" {
+		cat = c
+		delete(attrs, "cat") // 不重复展示在 attrs 里
+	} else {
+		cat = categorizeMsg(r.Message)
+	}
 	attrsStr := ""
 	if len(attrs) > 0 {
 		b, _ := json.Marshal(attrs)
 		attrsStr = string(b)
 	}
 	GlobalLog.Append(LogEntry{
-		Time:  r.Time.UTC().Format(time.RFC3339),
-		Level: r.Level.String(),
-		Msg:   r.Message,
-		Attrs: attrsStr,
+		Time:     r.Time.UTC().Format(time.RFC3339),
+		Level:    r.Level.String(),
+		Category: cat,
+		Msg:      r.Message,
+		Attrs:    attrsStr,
 	})
 	return h.inner.Handle(ctx, r)
 }

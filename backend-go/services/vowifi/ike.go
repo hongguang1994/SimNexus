@@ -19,14 +19,15 @@ var natMark = []byte{0, 0, 0, 0} // 非 ESP 标记，IKE 消息在 4500 上带�
 
 // Config 是建立一次 VoWiFi 会话所需的参数。
 type Config struct {
-	EPDGIP  string // ePDG IPv4，如 87.194.89.8
-	IMSI    string
-	MCC     string
-	MNC     string // 保持与 NAI 一致（如 "10"）
-	USIMAID string // 默认 A0000000871002FF44FFFF8901010100
-	APN     string // 默认 ims
-	IMEI    string // DEVICE_IDENTITY 用
-	ATPort  string // 串口设备，如 /dev/ttyUSB2
+	EPDGIP      string // ePDG IPv4，如 87.194.89.8
+	EPDGFromDNS bool   // 该 IP 是否由 DoH 动态解析得来（供界面标记「DNS」）
+	IMSI        string
+	MCC         string
+	MNC         string // 保持与 NAI 一致（如 "10"）
+	USIMAID     string // 默认 A0000000871002FF44FFFF8901010100
+	APN         string // 默认 ims
+	IMEI        string // DEVICE_IDENTITY 用
+	ATPort      string // 串口设备，如 /dev/ttyUSB2
 	// USIM AKA 的 QMI 备选：配置了 QMIDevice（如 /dev/cdc-wdm0）则 AT 失败时回退到 QMI
 	// （qmicli 逻辑通道 + Send APDU）。USIMSlot 一般为 1。
 	QMIDevice string
@@ -93,9 +94,17 @@ func NewSession(cfg Config) *Session {
 	return &Session{cfg: cfg}
 }
 
+// LogHook 若被上层设置，则每条 VoWiFi 详细日志除打到 stdout 外，也回调它（用于汇入日志缓冲、
+// 经 WebSocket 推给前端）。仅在 Verbose 时触发，与 stdout 输出保持一致。
+var LogHook func(msg string)
+
 func (s *Session) logf(format string, a ...any) {
 	if s.cfg.Verbose {
-		fmt.Printf("   [vowifi] "+format+"\n", a...)
+		msg := fmt.Sprintf(format, a...)
+		fmt.Printf("   [vowifi] %s\n", msg)
+		if LogHook != nil {
+			LogHook(msg)
+		}
 	}
 }
 

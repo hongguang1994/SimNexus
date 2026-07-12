@@ -88,11 +88,12 @@ func StartDaemon(cfg Config, steps *Steps, onSMS func(InboundSMS)) (*Daemon, err
 
 // SessionInfo 常驻会话的运行态信息，用于界面展示 VoWiFi 链路（区别于独占前的 mmcli 旧值）。
 type SessionInfo struct {
-	EPDGIP     string `json:"epdg_ip"`     // 连接的 ePDG IPv4
-	TunnelIPv6 string `json:"tunnel_ipv6"` // ePDG 分配的隧道内网 IPv6
-	PCSCFCount int    `json:"pcscf_count"` // 拿到的 P-CSCF 数量
-	Registered bool   `json:"registered"`  // IMS 是否已注册
-	MSISDN     string `json:"msisdn"`      // IMS 注册返回的本机号码（P-Associated-URI）
+	EPDGIP      string `json:"epdg_ip"`       // 连接的 ePDG IPv4
+	EPDGFromDNS bool   `json:"epdg_from_dns"` // ePDG IP 是否由 DoH 动态解析得来
+	TunnelIPv6  string `json:"tunnel_ipv6"`   // ePDG 分配的隧道内网 IPv6
+	PCSCFCount  int    `json:"pcscf_count"`   // 拿到的 P-CSCF 数量
+	Registered  bool   `json:"registered"`    // IMS 是否已注册
+	MSISDN      string `json:"msisdn"`        // IMS 注册返回的本机号码（P-Associated-URI）
 }
 
 // LastAlive 返回会话最近一次有生命迹象的时刻（供上层看门狗判死自愈）。
@@ -101,11 +102,12 @@ func (d *Daemon) LastAlive() time.Time { return d.sess.LastAlive() }
 // Info 返回当前会话的运行态快照。
 func (d *Daemon) Info() SessionInfo {
 	return SessionInfo{
-		EPDGIP:     d.sess.cfg.EPDGIP,
-		TunnelIPv6: formatIPv6(d.sess.AssignedIPv6),
-		PCSCFCount: len(d.sess.PCSCFv6),
-		Registered: d.sess.AssignedIPv6 != nil,
-		MSISDN:     d.sess.MSISDN,
+		EPDGIP:      d.sess.cfg.EPDGIP,
+		EPDGFromDNS: d.sess.cfg.EPDGFromDNS,
+		TunnelIPv6:  formatIPv6(d.sess.AssignedIPv6),
+		PCSCFCount:  len(d.sess.PCSCFv6),
+		Registered:  d.sess.AssignedIPv6 != nil,
+		MSISDN:      d.sess.MSISDN,
 	}
 }
 

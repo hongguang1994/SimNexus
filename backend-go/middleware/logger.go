@@ -21,6 +21,7 @@ func SlogLogger() gin.HandlerFunc {
 			lvl = slog.LevelWarn
 		}
 		slog.Log(c.Request.Context(), lvl, c.Request.Method+" "+c.Request.URL.Path,
+			"cat", "http",
 			"status", status,
 			"latency", latency.Round(time.Millisecond).String(),
 			"ip", c.ClientIP(),

@@ -353,28 +353,35 @@ export default function SimDetail() {
         const info = modem.vowifi_info
         return (
           <section className="rounded-2xl border border-gray-700/60 bg-gray-800/40 p-5 space-y-2.5">
-            {/* 头部：状态点 + 标题 + 状态文本 +（就绪时）阶段小圆点 + 主开关 */}
+            {/* 飞行模式：独立一行，与 WiFi-Calling 同卡（本卡片主职能=模式切换）。
+                开=关射频不在蜂窝注册，VoWiFi 走 IP 不受影响照常收发 */}
+            <div className="flex items-center gap-2 pb-2.5 border-b border-gray-700/60">
+              <span className="text-base shrink-0">✈️</span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-100">飞行模式</div>
+                <div className="text-[11px] text-gray-500">关射频，不在蜂窝注册（VoWiFi 照常）</div>
+              </div>
+              <button
+                onClick={() => saveAirplane(!modem.vowifi_airplane)}
+                disabled={airSaving}
+                className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0 ml-auto',
+                  modem.vowifi_airplane ? 'bg-amber-500' : 'bg-gray-600')}
+                title="飞行模式（关射频，不在蜂窝基站注册）"
+              >
+                <span className={clsx('inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                  modem.vowifi_airplane ? 'translate-x-4' : 'translate-x-1')} />
+              </button>
+            </div>
+
+            {/* 头部：状态点 + 标题 + 状态文本 + 主开关 */}
             <div className="flex items-center gap-2">
               <span className={clsx('w-2 h-2 rounded-full shrink-0', status.dot)} />
               <span className={clsx('text-sm font-semibold shrink-0', status.text)}>WiFi-Calling</span>
               <span className={clsx('text-[11px] shrink-0', status.text)}>· {status.label}</span>
-              {/* 飞行模式：独立常显（与 WiFi-Calling 解耦，关了 VoWiFi 也能让卡不在蜂窝注册）*/}
-              <div className="flex items-center gap-1.5 ml-auto shrink-0" title="飞行模式（关射频，不在蜂窝基站注册）">
-                <span className="text-[11px] text-gray-400">✈️ 飞行</span>
-                <button
-                  onClick={() => saveAirplane(!modem.vowifi_airplane)}
-                  disabled={airSaving}
-                  className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50',
-                    modem.vowifi_airplane ? 'bg-amber-500' : 'bg-gray-600')}
-                >
-                  <span className={clsx('inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-                    modem.vowifi_airplane ? 'translate-x-4' : 'translate-x-1')} />
-                </button>
-              </div>
               <button
                 onClick={() => saveVowifi(!modem.vowifi_mode)}
                 disabled={vwSaving}
-                className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0',
+                className={clsx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0 ml-auto',
                   modem.vowifi_mode ? 'bg-blue-600' : 'bg-gray-600')}
                 title={t('vowifi_toggle')}
               >
@@ -405,14 +412,20 @@ export default function SimDetail() {
                     <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{t('vowifi_runtime')}</p>
                     <div className="divide-y divide-gray-700/40">
                       {[
-                        { label: 'ePDG', value: info.epdg_ip || '—' },
-                        { label: t('vowifi_tunnel_ip'), value: info.tunnel_ipv6 || '—' },
-                        { label: 'P-CSCF', value: String(info.pcscf_count) },
-                        { label: t('detail_phone'), value: modem.phone_number || '—' },
+                        { label: 'ePDG', value: info.epdg_ip || '—', tag: info.epdg_from_dns ? 'DNS' : '' },
+                        { label: t('vowifi_tunnel_ip'), value: info.tunnel_ipv6 || '—', tag: '' },
+                        { label: 'P-CSCF', value: String(info.pcscf_count), tag: '' },
+                        { label: t('detail_phone'), value: modem.phone_number || '—', tag: '' },
                       ].map((r, i) => (
                         <div key={i} className="flex items-center justify-between gap-4 py-1 text-[11px]">
                           <span className="text-gray-500 shrink-0">{r.label}</span>
-                          <span className="text-gray-200 font-mono truncate" title={r.value}>{r.value}</span>
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            {r.tag && (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 text-[9px] font-semibold shrink-0"
+                                title="ePDG 地址由 DoH 动态解析得来">{r.tag}</span>
+                            )}
+                            <span className="text-gray-200 font-mono truncate" title={r.value}>{r.value}</span>
+                          </span>
                         </div>
                       ))}
                     </div>

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Trash2, WifiOff, Wifi } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
+import { useLangStore } from '../store/langStore'
 import { useT } from '../i18n'
 
 interface LogEntry {
   time: string
   level: string
+  category: string
   msg: string
   attrs?: string
 }
@@ -19,47 +21,87 @@ const LEVEL_STYLES: Record<string, { badge: string; row: string }> = {
 
 const ALL_LEVELS = ['INFO', 'WARN', 'ERROR', 'DEBUG']
 
+// 分类标签页（与后端 category 一致）。'all' 为聚合视图。
+const CATEGORIES = ['all', 'http', 'vowifi', 'poller', 'scheduler', 'telegram', 'system'] as const
+type Category = typeof CATEGORIES[number]
+
+const CAT_LABELS: Record<Category, { zh: string; en: string }> = {
+  all:       { zh: '全部',    en: 'All' },
+  http:      { zh: 'HTTP 请求', en: 'HTTP' },
+  vowifi:    { zh: 'VoWiFi',  en: 'VoWiFi' },
+  poller:    { zh: '设备轮询', en: 'Poller' },
+  scheduler: { zh: '定时任务', en: 'Scheduler' },
+  telegram:  { zh: 'Telegram', en: 'Telegram' },
+  system:    { zh: '系统',     en: 'System' },
+}
+
+// 每个分类标签页对应的强调色（选中态）。
+const CAT_ACTIVE: Record<Category, string> = {
+  all:       'border-blue-500 text-blue-400 bg-blue-900/20',
+  http:      'border-sky-500 text-sky-400 bg-sky-900/20',
+  vowifi:    'border-emerald-500 text-emerald-400 bg-emerald-900/20',
+  poller:    'border-amber-500 text-amber-400 bg-amber-900/20',
+  scheduler: 'border-violet-500 text-violet-400 bg-violet-900/20',
+  telegram:  'border-cyan-500 text-cyan-400 bg-cyan-900/20',
+  system:    'border-gray-400 text-gray-300 bg-gray-700/40',
+}
+
 export default function Logs() {
   const t = useT()
+  const lang = useLangStore(s => s.lang)
   const token = useAuthStore(s => s.token)
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [connected, setConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [cat, setCat] = useState<Category>('all')
   const [hiddenLevels, setHiddenLevels] = useState<Set<string>>(new Set())
   const [keyword, setKeyword] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-  const esRef = useRef<EventSource | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
     if (!token) return
+    let closed = false
+    let ws: WebSocket | null = null
+    let retry: ReturnType<typeof setTimeout> | undefined
     const connect = () => {
-      const es = new EventSource(`/api/v1/admin/logs/stream?token=${token}`)
-      esRef.current = es
-      es.onopen = () => setConnected(true)
-      es.onerror = () => {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
+      ws = new WebSocket(`${protocol}://${location.host}/ws/logs?token=${token}`)
+      wsRef.current = ws
+      ws.onopen = () => setConnected(true)
+      ws.onclose = () => {
         setConnected(false)
-        es.close()
-        setTimeout(connect, 3000)
+        if (!closed) retry = setTimeout(connect, 3000)
       }
-      es.onmessage = (e) => {
+      ws.onerror = () => ws?.close()
+      ws.onmessage = (e) => {
         try {
           const entry: LogEntry = JSON.parse(e.data)
           setEntries(prev => {
             const next = [...prev, entry]
-            return next.length > 2000 ? next.slice(-2000) : next
+            return next.length > 3000 ? next.slice(-3000) : next
           })
-        } catch {}
+        } catch { /* ignore malformed */ }
       }
     }
     connect()
-    return () => { esRef.current?.close() }
+    return () => { closed = true; clearTimeout(retry); ws?.close() }
   }, [token])
 
   useEffect(() => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [entries, autoScroll])
+  }, [entries, autoScroll, cat, hiddenLevels, keyword])
+
+  // 各分类的条数（用于标签页角标）。
+  const catCounts = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const e of entries) c[e.category || 'system'] = (c[e.category || 'system'] || 0) + 1
+    c.all = entries.length
+    return c
+  }, [entries])
 
   const filtered = entries.filter(e => {
+    if (cat !== 'all' && (e.category || 'system') !== cat) return false
     const lv = (e.level || '').toUpperCase()
     if (hiddenLevels.has(lv)) return false
     if (keyword) {
@@ -76,6 +118,8 @@ export default function Logs() {
       return next
     })
   }
+
+  const catLabel = (c: Category) => CAT_LABELS[c][lang === 'zh' ? 'zh' : 'en']
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
@@ -104,7 +148,25 @@ export default function Logs() {
         </div>
       </div>
 
-      {/* Filter bar */}
+      {/* Category tabs */}
+      <div className="flex items-center gap-1.5 flex-wrap border-b border-[var(--border)] pb-2">
+        {CATEGORIES.map(c => {
+          const active = cat === c
+          const n = catCounts[c] || 0
+          return (
+            <button
+              key={c}
+              onClick={() => setCat(c)}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? CAT_ACTIVE[c] : 'border-transparent text-[var(--text-secondary)] hover:bg-white/5'}`}
+            >
+              {catLabel(c)}
+              {n > 0 && <span className={`ml-1.5 px-1.5 rounded-full text-[10px] ${active ? 'bg-white/15' : 'bg-white/10'}`}>{n}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Filter bar: keyword + level */}
       <div className="flex items-center gap-2 flex-wrap">
         <input
           value={keyword}
@@ -112,6 +174,7 @@ export default function Logs() {
           placeholder={t('logs_search')}
           className="text-sm px-3 py-1.5 rounded border border-[var(--border)] bg-[var(--bg-secondary)] text-[var(--text-primary)] outline-none focus:border-blue-500 w-56"
         />
+        <span className="text-xs text-[var(--text-secondary)] ml-1">{t('logs_level')}:</span>
         {ALL_LEVELS.map(lv => {
           const active = !hiddenLevels.has(lv)
           const s = LEVEL_STYLES[lv]
@@ -134,7 +197,7 @@ export default function Logs() {
             {connected ? t('logs_empty') : t('logs_connecting')}
           </div>
         ) : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[640px] border-collapse">
+          <div className="overflow-x-auto"><table className="w-full min-w-[720px] border-collapse">
             <tbody>
               {filtered.map((e, i) => {
                 const lv = (e.level || '').toUpperCase()
@@ -147,6 +210,11 @@ export default function Logs() {
                     <td className="px-2 py-1 w-14">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.badge}`}>{lv}</span>
                     </td>
+                    {cat === 'all' && (
+                      <td className="px-2 py-1 w-20">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-[var(--text-secondary)]">{e.category || 'system'}</span>
+                      </td>
+                    )}
                     <td className="px-3 py-1 text-[var(--text-primary)] break-all">
                       {e.msg}
                       {e.attrs && <span className="ml-2 text-[var(--text-secondary)]">{e.attrs}</span>}

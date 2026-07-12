@@ -26,6 +26,8 @@ func Setup(r *gin.Engine, cfg *config.Config) {
 	r.GET("/ws/telegram", handlers.TelegramWS)
 	// WebSocket：客服会话消息实时推送给用户咨询页
 	r.GET("/ws/support", handlers.SupportWS)
+	// WebSocket：后端各类日志实时推送给日志页（仅管理员）
+	r.GET("/ws/logs", handlers.LogsWS)
 
 	api := r.Group("/api/v1")
 	registerPublic(api)
@@ -64,6 +66,7 @@ func registerAuth(api *gin.RouterGroup) {
 	registerNotifications(auth)
 	registerSupport(auth)
 	registerTelegram(auth)
+	registerContacts(auth)
 
 	// 获取仪表盘统计数据（设备数、短信量等）
 	auth.GET("/dashboard/stats", handlers.DashboardStats)
@@ -95,14 +98,14 @@ func registerRoles(auth *gin.RouterGroup) {
 // registerModems 设备管理路由。
 func registerModems(auth *gin.RouterGroup) {
 	modems := auth.Group("/modems")
-	modems.GET("/available", handlers.ListAvailableModems) // 资源库：获取所有设备（含访问状态）
-	modems.GET("/", handlers.ListModems)                   // 获取当前用户有权限的设备列表
-	modems.GET("/:id", handlers.GetModem)                  // 获取单个设备基本信息
-	modems.PATCH("/:id", handlers.UpdateModem)             // 修改设备别名等属性
-	modems.PATCH("/:id/vowifi", handlers.SetVowifiMode)    // 切换该卡的 VoWiFi 模式（仅管理员）
+	modems.GET("/available", handlers.ListAvailableModems)  // 资源库：获取所有设备（含访问状态）
+	modems.GET("/", handlers.ListModems)                    // 获取当前用户有权限的设备列表
+	modems.GET("/:id", handlers.GetModem)                   // 获取单个设备基本信息
+	modems.PATCH("/:id", handlers.UpdateModem)              // 修改设备别名等属性
+	modems.PATCH("/:id/vowifi", handlers.SetVowifiMode)     // 切换该卡的 VoWiFi 模式（仅管理员）
 	modems.PATCH("/:id/airplane", handlers.SetAirplaneMode) // 切换该卡的飞行模式（仅管理员）
-	modems.GET("/:id/detail", handlers.GetModemDetail)     // 获取设备详情（含实时信号、流量等）
-	modems.POST("/:id/refresh", handlers.RefreshModem)     // 手动触发单个设备立即刷新
+	modems.GET("/:id/detail", handlers.GetModemDetail)      // 获取设备详情（含实时信号、流量等）
+	modems.POST("/:id/refresh", handlers.RefreshModem)      // 手动触发单个设备立即刷新
 }
 
 // registerSMS 短信相关路由。
@@ -167,4 +170,13 @@ func registerTelegram(auth *gin.RouterGroup) {
 	tg.POST("/send-file", middleware.RequireAdmin(), handlers.TelegramSendFile)       // 向 Telegram 发送图片或文件
 	tg.DELETE("/messages", middleware.RequireAdmin(), handlers.TelegramClearMessages) // 清空 Telegram 消息记录
 	tg.GET("/config", middleware.RequireAdmin(), handlers.TelegramConfig)             // 查看 Bot 配置状态
+}
+
+// registerContacts 通讯录路由（每个用户私有）。
+func registerContacts(auth *gin.RouterGroup) {
+	ct := auth.Group("/contacts")
+	ct.GET("/", handlers.ListContacts)        // 获取当前用户的通讯录
+	ct.POST("/", handlers.CreateContact)      // 新建联系人
+	ct.PATCH("/:id", handlers.UpdateContact)  // 修改联系人
+	ct.DELETE("/:id", handlers.DeleteContact) // 删除联系人
 }
