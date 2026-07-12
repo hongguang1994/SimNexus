@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS modems (
     vowifi_mode         NUMERIC DEFAULT 0,       -- 该卡是否走自建 VoWiFi 协议栈发短信
     vowifi_epdg_ip      TEXT    DEFAULT '',      -- ePDG IPv4（留空用环境变量）
     vowifi_at_port      TEXT    DEFAULT '',      -- AT 串口，如 /dev/ttyUSB2
+    vowifi_airplane     NUMERIC DEFAULT 1,       -- 飞行模式：关射频、不在蜂窝注册（与 VoWiFi 解耦）
     PRIMARY KEY (id),
     UNIQUE (mm_object_path),
     UNIQUE (imei)
@@ -302,6 +303,22 @@ CREATE TABLE IF NOT EXISTS telegram_messages (
 );
 CREATE INDEX IF NOT EXISTS ix_telegram_messages_id      ON telegram_messages (id);
 CREATE INDEX IF NOT EXISTS ix_telegram_messages_chat_id ON telegram_messages (chat_id);
+
+-- ─────────────────────────────────────────────
+-- 通讯录（每个用户私有，按 owner_id 隔离）
+-- ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS contacts (
+    id         INTEGER  NOT NULL,
+    owner_id   INTEGER  NOT NULL,          -- 归属用户
+    name       TEXT     NOT NULL DEFAULT '',
+    phone      TEXT     NOT NULL DEFAULT '',
+    company    TEXT     NOT NULL DEFAULT '',
+    note       TEXT     NOT NULL DEFAULT '',
+    created_at DATETIME,
+    updated_at DATETIME,
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS ix_contacts_owner_id ON contacts (owner_id);
 
 -- ─────────────────────────────────────────────
 -- 初始数据

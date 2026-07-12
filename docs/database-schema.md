@@ -2,15 +2,18 @@
 
 ## 总览
 
-SimNexus 使用 SQLite，共 12 张表，分为五个功能域：
+SimNexus 使用 SQLite，分为若干功能域：
 
 | 功能域 | 表 |
 |--------|-----|
-| 用户与权限 | `users`、`roles`、`user_roles`、`role_modem_scope` |
-| 设备管理 | `modems`、`sim_access_requests` |
+| 用户与权限 | `users`、`roles`、`user_roles` |
+| 设备管理 | `modems`、`sim_access_requests`、`sim_grants` |
 | 短信与任务 | `sms_messages`、`sms_scheduled_tasks`、`sms_templates` |
+| 通讯录 | `contacts` |
 | 通知与客服 | `notifications`、`support_messages` |
 | Telegram 集成 | `telegram_messages` |
+
+> 建表 SQL 以 [`schema.sql`](schema.sql) 为准（后端启动时 gorm AutoMigrate + ensureColumns 亦会补齐新表/新列）。`modems` 表含 VoWiFi 相关列：`vowifi_mode`、`vowifi_epdg_ip`、`vowifi_at_port`、`vowifi_airplane`（飞行模式，与 VoWiFi 解耦）。`contacts` 为每个用户私有通讯录（按 `owner_id` 隔离）。
 
 ---
 
