@@ -3,20 +3,24 @@ package services
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"simnexus-go/config"
 	"simnexus-go/database"
 	"simnexus-go/models"
+	"simnexus-go/security"
 )
 
 // telegramAPIBase Telegram Bot API 基础 URL。
@@ -28,8 +32,9 @@ var (
 )
 
 // tgChatAllowed 判断某 chat_id 是否在命令白名单内（fail-closed：白名单为空则拒绝所有）。
+// 白名单来自有效配置（DB 优先、env 兜底，见 telegram_settings.go）。
 func tgChatAllowed(chatID string) bool {
-	for _, id := range config.C.TelegramAllowedChats {
+	for _, id := range tgSet().allowed {
 		if id == chatID {
 			return true
 		}
@@ -37,9 +42,104 @@ func tgChatAllowed(chatID string) bool {
 	return false
 }
 
-func tgToken() string   { return config.C.TelegramBotToken }
-func tgChatID() string  { return config.C.TelegramChatID }
+func tgToken() string   { return tgSet().token }
+func tgChatID() string  { return tgSet().pushID }
 func tgBaseURL() string { return fmt.Sprintf("%s/bot%s", telegramAPIBase, tgToken()) }
+
+// ── Telegram 账号绑定：网页生成一次性绑定码，Telegram 里 /bind <码> 绑定 ──
+
+type tgBindCode struct {
+	userID uint
+	exp    time.Time
+}
+
+var (
+	tgBindCodes  = map[string]tgBindCode{}
+	tgBindCodeMu sync.Mutex
+)
+
+// TelegramGenBindCode 为某用户生成一次性绑定码（10 分钟有效）。
+func TelegramGenBindCode(userID uint) string {
+	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // 去掉易混字符
+	b := make([]byte, 6)
+	for i := range b {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		b[i] = alphabet[n.Int64()]
+	}
+	code := string(b)
+	tgBindCodeMu.Lock()
+	// 清理过期码
+	now := time.Now()
+	for k, v := range tgBindCodes {
+		if now.After(v.exp) {
+			delete(tgBindCodes, k)
+		}
+	}
+	tgBindCodes[code] = tgBindCode{userID: userID, exp: now.Add(10 * time.Minute)}
+	tgBindCodeMu.Unlock()
+	return code
+}
+
+// tgConsumeBindCode 校验并消费绑定码，返回用户 ID。
+func tgConsumeBindCode(code string) (uint, bool) {
+	tgBindCodeMu.Lock()
+	defer tgBindCodeMu.Unlock()
+	c, ok := tgBindCodes[code]
+	if !ok || time.Now().After(c.exp) {
+		return 0, false
+	}
+	delete(tgBindCodes, code)
+	return c.userID, true
+}
+
+// tgBoundUser 返回某 chat 绑定的用户 ID（0=未绑定）。
+func tgBoundUser(chatID string) uint {
+	var b models.TelegramBind
+	if database.DB.Where("chat_id = ?", chatID).First(&b).Error == nil {
+		return b.UserID
+	}
+	return 0
+}
+
+const tgNeedBind = "请先绑定账号：/bind &lt;绑定码&gt;\n（在网页右上角「绑定 Telegram」生成绑定码）"
+
+// tgLoadUser 载入某 chat 绑定的用户（带 RBAC 角色与设备范围）。未绑定或用户不存在返回 nil。
+func tgLoadUser(chatID string) *models.User {
+	uid := tgBoundUser(chatID)
+	if uid == 0 {
+		return nil
+	}
+	var u models.User
+	if database.DB.Preload("RbacRoles").Preload("RbacRoles.ModemScope").
+		Where("is_active = ?", true).First(&u, uid).Error != nil {
+		return nil
+	}
+	return &u
+}
+
+// tgVisibleModems 返回该用户有权查看的设备（管理员=全部；无查看权限=空）。复用网页同一套权限逻辑。
+func tgVisibleModems(u *models.User) []models.Modem {
+	svc := NewModemService(database.DB)
+	ms, _ := svc.ListUserModems(u)
+	return ms
+}
+
+// tgSendableSet 返回该用户可发送短信（use 级）的设备 ID 集合。管理员=全部。
+func tgSendableSet(u *models.User) map[uint]bool {
+	set := map[uint]bool{}
+	if u.IsAdmin() {
+		var all []models.Modem
+		database.DB.Select("id").Find(&all)
+		for _, m := range all {
+			set[m.ID] = true
+		}
+		return set
+	}
+	for _, id := range security.GetUserModemGrants(database.DB, u.ID, models.LevelUse, u) {
+		set[id] = true
+	}
+	return set
+}
 
 // TelegramSendMessage sends a text message to a chat. Returns success.
 func TelegramSendMessage(text, chatID string, logIt bool) bool {
@@ -183,7 +283,9 @@ func tgHandle(msg *tgMessage) {
 
 	// 授权校验：Bot 的用户名是公开可搜索的，任何人都能私聊它。若不校验发件人，陌生人就能
 	// 用 /list 读你的短信、用 /send 拿你的卡发短信。只处理白名单内 chat 的消息，其余忽略。
-	if !tgChatAllowed(chatID) {
+	// /bind /start /help 对任何人开放（绑定是获取授权的入口）；其余命令要求已在白名单或已绑定账号。
+	openCmd := strings.HasPrefix(text, "/bind") || strings.HasPrefix(text, "/start") || strings.HasPrefix(text, "/help")
+	if !openCmd && !tgChatAllowed(chatID) && tgBoundUser(chatID) == 0 {
 		slog.Warn("telegram: 忽略未授权 chat 的消息", "chat_id", chatID, "user", username, "text", text)
 		return
 	}
@@ -218,10 +320,14 @@ func tgHandle(msg *tgMessage) {
 
 	switch {
 	case strings.HasPrefix(text, "/modems"):
-		var modems []models.Modem
-		database.DB.Where("is_active = ?", true).Find(&modems)
+		u := tgLoadUser(chatID)
+		if u == nil {
+			TelegramSendMessage(tgNeedBind, chatID, true)
+			return
+		}
+		modems := tgVisibleModems(u)
 		if len(modems) == 0 {
-			TelegramSendMessage("暂无设备", chatID, true)
+			TelegramSendMessage("你没有可访问的设备", chatID, true)
 			return
 		}
 		lines := []string{"📱 <b>当前设备列表</b>"}
@@ -244,10 +350,26 @@ func tgHandle(msg *tgMessage) {
 		TelegramSendMessage(strings.Join(lines, "\n"), chatID, true)
 
 	case strings.HasPrefix(text, "/send"):
+		u := tgLoadUser(chatID)
+		if u == nil {
+			TelegramSendMessage(tgNeedBind, chatID, true)
+			return
+		}
+		if !u.IsAdmin() {
+			if p := security.Perm(u); p == nil || p.ReadOnly {
+				TelegramSendMessage("你没有发送短信的权限", chatID, true)
+				return
+			}
+		}
+		sendable := tgSendableSet(u) // 该用户可发送(use 级)的设备
 		args := strings.TrimSpace(text[5:])
 		var modem *models.Modem
 		if m := tgReModemArg.FindStringSubmatch(args); m != nil {
 			mid, _ := strconv.Atoi(m[1])
+			if !sendable[uint(mid)] {
+				TelegramSendMessage(fmt.Sprintf("❌ 你无权用设备 #%d 发送", mid), chatID, true)
+				return
+			}
 			var mm models.Modem
 			if err := database.DB.First(&mm, mid).Error; err != nil {
 				TelegramSendMessage(fmt.Sprintf("❌ 未找到设备 #%d", mid), chatID, true)
@@ -263,32 +385,68 @@ func tgHandle(msg *tgMessage) {
 		}
 		number, content := parts[0], parts[1]
 		if modem == nil {
+			// 从「你可发送 + 在线」的设备里挑
 			var connected []models.Modem
 			database.DB.Where("status = ?", models.ModemConnected).Find(&connected)
-			if len(connected) == 0 {
-				TelegramSendMessage("❌ 无可用设备", chatID, true)
+			var avail []models.Modem
+			for _, m := range connected {
+				if sendable[m.ID] {
+					avail = append(avail, m)
+				}
+			}
+			if len(avail) == 0 {
+				TelegramSendMessage("❌ 无可用设备（你有权发送的卡都不在线）", chatID, true)
 				return
 			}
-			if len(connected) > 1 {
-				lines := []string{"⚠️ 有多个在线设备，请指定设备ID："}
-				for _, m := range connected {
+			if len(avail) > 1 {
+				lines := []string{"⚠️ 有多个可用设备，请指定设备ID："}
+				for _, m := range avail {
 					lines = append(lines, fmt.Sprintf("  #%d %s", m.ID, modemLabel(&m)))
 				}
-				lines = append(lines, fmt.Sprintf("\n例: /send #%d %s %s", connected[0].ID, number, content))
+				lines = append(lines, fmt.Sprintf("\n例: /send #%d %s %s", avail[0].ID, number, content))
 				TelegramSendMessage(strings.Join(lines, "\n"), chatID, true)
 				return
 			}
-			modem = &connected[0]
+			modem = &avail[0]
 		}
 		tgDoSend(modem, number, content, chatID)
 
 	case strings.HasPrefix(text, "/list"):
+		u := tgLoadUser(chatID)
+		if u == nil {
+			TelegramSendMessage(tgNeedBind, chatID, true)
+			return
+		}
+		if !u.IsAdmin() {
+			if p := security.Perm(u); p == nil || !p.CanViewHistory {
+				TelegramSendMessage("你没有查看短信记录的权限", chatID, true)
+				return
+			}
+		}
+		vis := map[uint]bool{}
+		for _, m := range tgVisibleModems(u) {
+			vis[m.ID] = true
+		}
+		if len(vis) == 0 {
+			TelegramSendMessage("你没有可访问的设备", chatID, true)
+			return
+		}
 		args := strings.TrimSpace(text[5:])
 		q := database.DB.Where("direction = ?", models.SmsInbound)
 		if strings.HasPrefix(args, "#") {
 			if mid, err := strconv.Atoi(strings.Fields(args[1:])[0]); err == nil {
+				if !vis[uint(mid)] {
+					TelegramSendMessage("你无权查看该设备的短信", chatID, true)
+					return
+				}
 				q = q.Where("modem_id = ?", mid)
 			}
+		} else {
+			ids := make([]uint, 0, len(vis))
+			for id := range vis {
+				ids = append(ids, id)
+			}
+			q = q.Where("modem_id IN ?", ids)
 		}
 		var msgs []models.SmsMessage
 		q.Order("created_at desc").Limit(10).Find(&msgs)
@@ -313,15 +471,217 @@ func tgHandle(msg *tgMessage) {
 		}
 		TelegramSendMessage(strings.Join(lines, "\n"), chatID, true)
 
+	case strings.HasPrefix(text, "/bind"):
+		arg := strings.ToUpper(strings.TrimSpace(text[len("/bind"):]))
+		if arg == "" {
+			TelegramSendMessage("用法：/bind &lt;绑定码&gt;\n绑定码在网页「Telegram 绑定」处生成（10 分钟有效）。", chatID, true)
+			return
+		}
+		uid, ok := tgConsumeBindCode(arg)
+		if !ok {
+			TelegramSendMessage("❌ 绑定码无效或已过期", chatID, true)
+			return
+		}
+		var u models.User
+		if database.DB.First(&u, uid).Error != nil {
+			TelegramSendMessage("❌ 账号不存在", chatID, true)
+			return
+		}
+		database.DB.Where("chat_id = ?", chatID).Delete(&models.TelegramBind{})
+		database.DB.Create(&models.TelegramBind{ChatID: chatID, UserID: uid})
+		TelegramSendMessage("✅ 已绑定账号 <b>"+htmlEscape(u.Username)+"</b>\n现在 /contacts 会返回你的通讯录。", chatID, true)
+
+	case strings.HasPrefix(text, "/unbind"):
+		database.DB.Where("chat_id = ?", chatID).Delete(&models.TelegramBind{})
+		TelegramSendMessage("已解绑该 chat。", chatID, true)
+
+	case strings.HasPrefix(text, "/whoami"):
+		uid := tgBoundUser(chatID)
+		if uid == 0 {
+			TelegramSendMessage("未绑定账号。发送 /bind &lt;绑定码&gt; 绑定。", chatID, true)
+			return
+		}
+		var u models.User
+		database.DB.First(&u, uid)
+		TelegramSendMessage("已绑定账号：<b>"+htmlEscape(u.Username)+"</b>", chatID, true)
+
+	case strings.HasPrefix(text, "/contacts"):
+		uid := tgBoundUser(chatID)
+		if uid == 0 {
+			TelegramSendMessage("请先绑定账号：/bind &lt;绑定码&gt;（网页生成）", chatID, true)
+			return
+		}
+		kw := strings.TrimSpace(text[len("/contacts"):])
+		q := database.DB.Where("owner_id = ?", uid)
+		if kw != "" {
+			like := "%" + kw + "%"
+			q = q.Where("name LIKE ? OR phone LIKE ? OR company LIKE ?", like, like, like)
+		}
+		var cs []models.Contact
+		q.Order("name asc").Limit(50).Find(&cs)
+		if len(cs) == 0 {
+			TelegramSendMessage("通讯录为空"+ternary(kw != "", "（无匹配「"+htmlEscape(kw)+"」）", ""), chatID, true)
+			return
+		}
+		lines := []string{fmt.Sprintf("📇 <b>通讯录</b>（%d）", len(cs))}
+		for _, c := range cs {
+			name := c.Name
+			if name == "" {
+				name = c.Phone
+			}
+			line := "• <b>" + htmlEscape(name) + "</b>"
+			if c.Phone != "" {
+				line += "  " + htmlEscape(c.Phone)
+			}
+			if c.Company != "" {
+				line += " · " + htmlEscape(c.Company)
+			}
+			lines = append(lines, line)
+		}
+		TelegramSendMessage(strings.Join(lines, "\n"), chatID, true)
+
 	case strings.HasPrefix(text, "/start"), strings.HasPrefix(text, "/help"):
-		help := "🤖 <b>SimNexus Bot</b>\n\n" +
-			"/modems - 查看所有设备\n" +
-			"/list - 查看最近10条收到的短信\n" +
-			"/list #&lt;设备ID&gt; - 查看指定设备的短信\n" +
-			"/send &lt;号码&gt; &lt;内容&gt; - 发送短信（单卡时自动选择）\n" +
-			"/send #&lt;设备ID&gt; &lt;号码&gt; &lt;内容&gt; - 通过指定设备发送\n"
-		TelegramSendMessage(help, chatID, true)
+		TelegramSendMessage(tgHelpText(), chatID, true)
+	default:
+		tgTryCustom(chatID, text)
 	}
+}
+
+// htmlEscape 转义 Telegram HTML 解析模式下的特殊字符。
+func htmlEscape(s string) string { return html.EscapeString(s) }
+
+// ternary 是简单的三元表达式辅助。
+func ternary(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
+}
+
+// tgHelpText 拼装帮助文本：内置命令 + 已启用的自定义命令。
+func tgHelpText() string {
+	help := "🤖 <b>SimNexus Bot</b>\n\n" +
+		"/modems - 查看所有设备\n" +
+		"/list - 查看最近10条收到的短信\n" +
+		"/list #&lt;设备ID&gt; - 查看指定设备的短信\n" +
+		"/send &lt;号码&gt; &lt;内容&gt; - 发送短信（单卡时自动选择）\n" +
+		"/send #&lt;设备ID&gt; &lt;号码&gt; &lt;内容&gt; - 通过指定设备发送\n" +
+		"\n<b>账号</b>\n" +
+		"/bind &lt;绑定码&gt; - 绑定网页账号（绑定码在网页生成）\n" +
+		"/whoami - 查看当前绑定的账号\n" +
+		"/unbind - 解除绑定\n" +
+		"/contacts [关键词] - 查看你的通讯录\n"
+	var cmds []models.TelegramCommand
+	database.DB.Where("enabled = ?", true).Order("command asc").Find(&cmds)
+	if len(cmds) > 0 {
+		help += "\n<b>自定义命令</b>\n"
+		for _, c := range cmds {
+			desc := c.Description
+			if desc == "" {
+				switch c.Type {
+				case "send":
+					desc = "发送预设短信"
+				case "webhook":
+					desc = "外部命令"
+				default:
+					desc = "自动回复"
+				}
+			}
+			help += fmt.Sprintf("/%s - %s\n", c.Command, desc)
+		}
+	}
+	return help
+}
+
+// tgTryCustom 匹配并执行自定义命令（内置命令未命中时兜底）。
+func tgTryCustom(chatID, text string) {
+	if !strings.HasPrefix(text, "/") {
+		return
+	}
+	fields := strings.Fields(text)
+	name := strings.TrimPrefix(strings.ToLower(fields[0]), "/")
+	if i := strings.Index(name, "@"); i >= 0 { // 群里可能是 /cmd@BotName
+		name = name[:i]
+	}
+	var cmd models.TelegramCommand
+	if database.DB.Where("lower(command) = ? AND enabled = ?", name, true).First(&cmd).Error != nil {
+		TelegramSendMessage("未知命令，发送 /help 查看可用命令", chatID, true)
+		return
+	}
+	switch cmd.Type {
+	case "reply":
+		TelegramSendMessage(cmd.ReplyText, chatID, true)
+	case "send":
+		number := strings.TrimSpace(cmd.ToNumber)
+		if len(fields) >= 2 { // 命令参数优先于预设号码
+			number = fields[1]
+		}
+		if number == "" {
+			TelegramSendMessage("该命令需要号码参数：/"+cmd.Command+" &lt;号码&gt;", chatID, true)
+			return
+		}
+		var modem *models.Modem
+		if cmd.ModemID > 0 {
+			var mm models.Modem
+			if database.DB.First(&mm, cmd.ModemID).Error != nil {
+				TelegramSendMessage(fmt.Sprintf("❌ 预设设备 #%d 不存在", cmd.ModemID), chatID, true)
+				return
+			}
+			modem = &mm
+		} else {
+			var connected []models.Modem
+			database.DB.Where("status = ?", models.ModemConnected).Find(&connected)
+			if len(connected) == 0 {
+				TelegramSendMessage("❌ 无可用设备", chatID, true)
+				return
+			}
+			modem = &connected[0]
+		}
+		tgDoSend(modem, number, cmd.Content, chatID)
+	case "webhook":
+		tgRunWebhook(&cmd, fields, text, chatID)
+	default:
+		TelegramSendMessage("命令类型无效", chatID, true)
+	}
+}
+
+// tgRunWebhook 把命令转发到外部 HTTP 服务，用返回体（或 JSON 的 text 字段）作为回复。
+// 让「页面配置即可实现任意命令」——逻辑写在外部服务，无需改后台。URL 由管理员配置。
+func tgRunWebhook(cmd *models.TelegramCommand, fields []string, text, chatID string) {
+	if strings.TrimSpace(cmd.WebhookURL) == "" {
+		TelegramSendMessage("该命令未配置 Webhook URL", chatID, true)
+		return
+	}
+	args := []string{}
+	if len(fields) > 1 {
+		args = fields[1:]
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"command": cmd.Command,
+		"args":    args,
+		"text":    text,
+		"chat_id": chatID,
+	})
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(cmd.WebhookURL, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		TelegramSendMessage("❌ Webhook 调用失败："+err.Error(), chatID, true)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	reply := strings.TrimSpace(string(body))
+	// 优先解析 {"text": "..."}
+	var j struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(body, &j) == nil && strings.TrimSpace(j.Text) != "" {
+		reply = j.Text
+	}
+	if reply == "" {
+		reply = "（Webhook 无返回内容）"
+	}
+	TelegramSendMessage(reply, chatID, true)
 }
 
 // mapFileID 从媒体对象（document/video/sticker/voice）中提取 file_id。
@@ -343,12 +703,22 @@ func orDefault(s, def string) string {
 	return s
 }
 
-// StartTelegramPolling begins long-polling getUpdates until ctx is cancelled.
-func StartTelegramPolling(ctx context.Context) {
+// StartTelegramPolling 载入有效配置并按当前 token 启动长轮询；token 变更后可经
+// RestartTelegramPolling 热重启（见 telegram_settings.go）。parent ctx 取消则整体停止。
+func StartTelegramPolling(parent context.Context) {
+	LoadTelegramSettings()
+	tgPollMu.Lock()
+	tgPollParent = parent
+	tgPollMu.Unlock()
 	if tgToken() == "" {
 		slog.Warn("Telegram bot token not configured; skipping polling")
 		return
 	}
+	RestartTelegramPolling()
+}
+
+// tgPollLoop 长轮询 getUpdates 直到 ctx 取消。
+func tgPollLoop(ctx context.Context) {
 	slog.Info("Telegram bot polling started")
 	client := &http.Client{Timeout: 35 * time.Second}
 	for {

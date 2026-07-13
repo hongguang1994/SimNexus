@@ -170,6 +170,19 @@ func registerTelegram(auth *gin.RouterGroup) {
 	tg.POST("/send-file", middleware.RequireAdmin(), handlers.TelegramSendFile)       // 向 Telegram 发送图片或文件
 	tg.DELETE("/messages", middleware.RequireAdmin(), handlers.TelegramClearMessages) // 清空 Telegram 消息记录
 	tg.GET("/config", middleware.RequireAdmin(), handlers.TelegramConfig)             // 查看 Bot 配置状态
+	// Bot 可视化设置（token/chat/白名单，DB 保存 + 热重启）
+	tg.GET("/settings", middleware.RequireAdmin(), handlers.GetTelegramSettings)
+	tg.PUT("/settings", middleware.RequireAdmin(), handlers.SaveTelegramSettings)
+	// 自定义命令 CRUD
+	tg.GET("/commands", middleware.RequireAdmin(), handlers.ListTelegramCommands)
+	tg.POST("/commands", middleware.RequireAdmin(), handlers.CreateTelegramCommand)
+	tg.PATCH("/commands/:id", middleware.RequireAdmin(), handlers.UpdateTelegramCommand)
+	tg.DELETE("/commands/:id", middleware.RequireAdmin(), handlers.DeleteTelegramCommand)
+	// 生成 Telegram 绑定码（任意登录用户，用于 /bind 绑定自己的账号）
+	tg.POST("/bind-code", handlers.GenTelegramBindCode)
+	// 列出/解绑当前账号名下的 Telegram 绑定（任意登录用户）
+	tg.GET("/binds", handlers.ListMyTelegramBinds)
+	tg.DELETE("/binds/:id", handlers.DeleteMyTelegramBind)
 }
 
 // registerContacts 通讯录路由（每个用户私有）。

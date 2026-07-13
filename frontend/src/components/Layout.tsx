@@ -15,6 +15,7 @@ import { useT } from '../i18n'
 import { format } from 'date-fns'
 import { changePasswordApi, getMeApi } from '../api/auth'
 import { getUnreadApi } from '../api/support'
+import { genTelegramBindCodeApi } from '../api/telegram'
 import {
   getNotificationsApi, getUnreadCountApi, markAllReadApi, markOneReadApi,
   type AppNotification,
@@ -307,6 +308,10 @@ export default function Layout() {
   const t = useT()
   const [profileTab, setProfileTab] = useState<'info' | 'pwd'>('info')
   const [showProfile, setShowProfile] = useState(false)
+  const [bindCode, setBindCode] = useState<string | null>(null)
+  const genBind = async () => {
+    try { setBindCode((await genTelegramBindCodeApi()).data.code) } catch { /* ignore */ }
+  }
   const [showSupport, setShowSupport] = useState(false)
   const [supportUnread, setSupportUnread] = useState(0)
   const [sideCollapsed, setSideCollapsed] = useState(false)
@@ -576,6 +581,10 @@ export default function Layout() {
                 <KeyRound className="w-4 h-4 text-gray-400" />
                 {t('layout_change_pwd')}
               </DropdownItem>
+              <DropdownItem onClick={genBind}>
+                <Bot className="w-4 h-4 text-gray-400" />
+                {t('layout_bind_telegram')}
+              </DropdownItem>
             </div>
 
             <DropdownDivider />
@@ -779,6 +788,20 @@ export default function Layout() {
       </div>
 
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} initialTab={profileTab} />}
+
+      {bindCode && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setBindCode(null)}>
+          <div className="w-full max-w-sm bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-6 text-center" onClick={e => e.stopPropagation()}>
+            <Bot className="w-8 h-8 text-blue-400 mx-auto mb-2" />
+            <h2 className="text-base font-semibold text-white">{t('layout_bind_telegram')}</h2>
+            <p className="text-xs text-gray-400 mt-1">{t('layout_bind_hint')}</p>
+            <div className="my-4 text-3xl font-bold tracking-[0.3em] text-blue-300 font-mono select-all">{bindCode}</div>
+            <p className="text-xs text-gray-500">在 Telegram 里发送 <span className="font-mono text-gray-300">/bind {bindCode}</span></p>
+            <button onClick={() => setBindCode(null)} className="mt-4 px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-500 text-white">{t('close')}</button>
+          </div>
+        </div>
+      )}
+
       {showSupport && <SupportChat onClose={() => setShowSupport(false)} onUnreadChange={setSupportUnread} />}
     </div>
   )

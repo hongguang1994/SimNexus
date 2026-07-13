@@ -42,8 +42,8 @@ func Init(cfg *config.Config) {
 		&models.SupportMessage{},
 		&models.TelegramMessage{},
 	)
-	// Contact 是新表，单独 AutoMigrate，避免被上面链式调用中途报错中断而漏建表。
-	_ = db.AutoMigrate(&models.Contact{})
+	// 新表单独 AutoMigrate，避免被上面链式调用中途报错中断而漏建表。
+	_ = db.AutoMigrate(&models.Contact{}, &models.TelegramConfig{}, &models.TelegramCommand{}, &models.TelegramBind{})
 
 	// AutoMigrate 是单次调用：靠前的 model 在 SQLite 上尝试改列会报错并中断整个链，
 	// 导致靠后 model 的新列加不上。这里对确实需要的新列显式补 ALTER（幂等，列已存在时忽略）。
@@ -60,6 +60,7 @@ func ensureColumns(db *gorm.DB) {
 		`ALTER TABLE modems ADD COLUMN vowifi_epdg_ip VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE modems ADD COLUMN vowifi_at_port VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE modems ADD COLUMN vowifi_airplane numeric DEFAULT 1`,
+		`ALTER TABLE telegram_commands ADD COLUMN webhook_url TEXT DEFAULT ''`,
 	}
 	for _, sql := range alters {
 		_ = db.Exec(sql).Error // 列已存在会报 "duplicate column name"，忽略即可

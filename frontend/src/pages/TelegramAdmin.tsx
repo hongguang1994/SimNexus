@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { useAuthStore } from '../store/authStore'
-import { Send, Trash2, RefreshCw, Bot, Paperclip, X } from 'lucide-react'
+import { Send, Trash2, RefreshCw, Bot, Paperclip, X, Settings } from 'lucide-react'
+import TelegramSettings from '../components/TelegramSettings'
 import { format, isToday, isYesterday } from 'date-fns'
 
 // iMessage 风格居中日期分隔（与消息中心一致）
@@ -29,6 +30,7 @@ export default function TelegramAdmin() {
   const token = useAuthStore(s => s.token)
   const fileUrl = (fileId: string) => `/api/v1/telegram/file/${fileId}?token=${token}`
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const [messages, setMessages] = useState<TelegramMessage[]>([])
   const [config, setConfig] = useState<TelegramConfig | null>(null)
   const [input, setInput] = useState('')
@@ -221,6 +223,13 @@ export default function TelegramAdmin() {
             自动刷新
           </button>
           <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            设置
+          </button>
+          <button
             onClick={load}
             className="p-2 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             title="刷新"
@@ -360,6 +369,8 @@ export default function TelegramAdmin() {
         </div>,
         document.body
       )}
+
+      {showSettings && <TelegramSettings onClose={() => setShowSettings(false)} onSaved={load} />}
     </div>
   )
 }
