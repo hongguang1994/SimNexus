@@ -27,9 +27,10 @@ type DashboardStats struct {
 
 // smsRow 用于接收 GROUP BY 聚合查询结果。
 type smsRow struct {
-	Day    string // 日期字符串 yyyy-MM-dd
-	Status string // 短信状态
-	Cnt    int64  // 条数
+	Day       string // 日期字符串 yyyy-MM-dd
+	Direction string // inbound | outbound
+	Status    string // 短信状态
+	Cnt       int64  // 条数
 }
 
 // GetStats 计算并返回仪表盘全部统计数据。
@@ -37,13 +38,12 @@ func (s *DashboardService) GetStats() DashboardStats {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	sevenDaysAgo := today.AddDate(0, 0, -6) // 包含今天共 7 天
 
-	// ---- 近 7 天每日趋势 ----
+	// ---- 近 7 天每日趋势（发送成功/失败 + 接收）----
 	var smsRows []smsRow
 	s.db.Model(&models.SmsMessage{}).
-		Select("date(created_at) as day, status, count(*) as cnt").
-		Where("direction = ? AND date(created_at) >= ?",
-			models.SmsOutbound, sevenDaysAgo.Format("2006-01-02")).
-		Group("day, status").
+		Select("date(created_at) as day, direction, status, count(*) as cnt").
+		Where("date(created_at) >= ?", sevenDaysAgo.Format("2006-01-02")).
+		Group("day, direction, status").
 		Scan(&smsRows)
 
 	// 初始化 7 天日期框架，确保没有数据的日期也有占位
@@ -51,17 +51,23 @@ func (s *DashboardService) GetStats() DashboardStats {
 	order := make([]string, 0, 7)
 	for i := 0; i < 7; i++ {
 		d := today.AddDate(0, 0, -6+i).Format("2006-01-02")
-		trend[d] = map[string]interface{}{"date": d, "sent": int64(0), "failed": int64(0)}
+		trend[d] = map[string]interface{}{"date": d, "sent": int64(0), "failed": int64(0), "received": int64(0)}
 		order = append(order, d)
 	}
 	for _, r := range smsRows {
-		if t, ok := trend[r.Day]; ok {
-			switch r.Status {
-			case models.SmsSent:
-				t["sent"] = r.Cnt
-			case models.SmsFailed:
-				t["failed"] = r.Cnt
-			}
+		t, ok := trend[r.Day]
+		if !ok {
+			continue
+		}
+		if r.Direction == models.SmsInbound {
+			t["received"] = t["received"].(int64) + r.Cnt // 收件不分状态，全部计入接收
+			continue
+		}
+		switch r.Status {
+		case models.SmsSent:
+			t["sent"] = r.Cnt
+		case models.SmsFailed:
+			t["failed"] = r.Cnt
 		}
 	}
 	trendList := make([]map[string]interface{}, 0, 7)
@@ -78,7 +84,7 @@ func (s *DashboardService) GetStats() DashboardStats {
 		Where("direction = ? AND date(created_at) >= ?", models.SmsOutbound, monthStart).
 		Group("status").
 		Scan(&monthRows)
-	monthStats := map[string]interface{}{"sent": int64(0), "failed": int64(0), "pending": int64(0)}
+	monthStats := map[string]interface{}{"sent": int64(0), "failed": int64(0), "pending": int64(0), "received": int64(0)}
 	for _, r := range monthRows {
 		switch r.Status {
 		case models.SmsSent:
@@ -90,6 +96,12 @@ func (s *DashboardService) GetStats() DashboardStats {
 			monthStats["pending"] = monthStats["pending"].(int64) + r.Cnt
 		}
 	}
+	// 本月接收（收件）总数
+	var recvMonth int64
+	s.db.Model(&models.SmsMessage{}).
+		Where("direction = ? AND date(created_at) >= ?", models.SmsInbound, monthStart).
+		Count(&recvMonth)
+	monthStats["received"] = recvMonth
 
 	// ---- 定时任务状态分布 ----
 	var taskRows []smsRow

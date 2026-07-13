@@ -11,7 +11,8 @@ import { useT } from '../i18n'
 
 const SENT_COLOR = '#3b82f6'
 const FAIL_COLOR = '#ef4444'
-const PIE_COLORS = ['#10b981', '#ef4444', '#94a3b8']
+const RECV_COLOR = '#10b981'
+const PIE_COLORS = ['#10b981', '#ef4444', '#94a3b8', '#14b8a6']
 
 const TASK_KEYS = ['active', 'completed', 'failed', 'paused'] as const
 const TASK_COLORS: Record<string, string> = { active: '#3b82f6', completed: '#10b981', failed: '#ef4444', paused: '#f59e0b' }
@@ -80,9 +81,10 @@ export default function Dashboard() {
 
   // Pie data for month SMS
   const pieData = stats ? [
-    { name: t('dash_rate_sent'),    value: stats.month_sms.sent },
-    { name: t('dash_rate_failed'),  value: stats.month_sms.failed },
-    { name: t('dash_rate_pending'), value: stats.month_sms.pending },
+    { name: t('dash_rate_sent'),     value: stats.month_sms.sent },
+    { name: t('dash_rate_failed'),   value: stats.month_sms.failed },
+    { name: t('dash_rate_pending'),  value: stats.month_sms.pending },
+    { name: t('dash_rate_received'), value: stats.month_sms.received },
   ] : []
 
   // Signal bar chart data from live modem store
@@ -148,6 +150,9 @@ export default function Dashboard() {
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
                   <span style={{ width: 20, height: 2, background: FAIL_COLOR, display: 'inline-block', borderRadius: 1, borderTop: `2px dashed ${FAIL_COLOR}` }} />{t('dash_trend_failed')}
                 </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <span style={{ width: 20, height: 2, background: RECV_COLOR, display: 'inline-block', borderRadius: 1 }} />{t('dash_trend_received')}
+                </span>
               </div>
               <ResponsiveContainer width="100%" height={180}>
                 <LineChart data={stats?.sms_trend ?? []} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
@@ -158,6 +163,7 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Line type="monotone" dataKey="sent" name={t('dash_trend_sent')} stroke={SENT_COLOR} strokeWidth={2} dot={{ r: 3, fill: SENT_COLOR }} activeDot={{ r: 4 }} />
                   <Line type="monotone" dataKey="failed" name={t('dash_trend_failed')} stroke={FAIL_COLOR} strokeWidth={2} strokeDasharray="4 3" dot={{ r: 3, fill: FAIL_COLOR }} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="received" name={t('dash_trend_received')} stroke={RECV_COLOR} strokeWidth={2} dot={{ r: 3, fill: RECV_COLOR }} activeDot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
