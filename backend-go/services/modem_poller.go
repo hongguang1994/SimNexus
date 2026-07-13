@@ -95,6 +95,14 @@ func poll() {
 			}
 		}
 
+		// 防幽灵重复：既读不到 ICCID、IMEI 也无效（空或 "--"），又不是已存在记录、也不是 ZTE，
+		// 说明这是真卡在复位/重新枚举中途的 error 态（身份未知）。此时新建一行只会造成同卡重复，
+		// 应跳过——等它初始化好读到 ICCID 时会匹配到已有记录。
+		if modem.ID == 0 && info.Iccid == "" &&
+			(info.Imei == "" || info.Imei == "--") && !strings.HasPrefix(path, "zte:") {
+			continue
+		}
+
 		modem.DevicePath = info.DevicePath
 		modem.Manufacturer = info.Manufacturer
 		modem.Model = info.Model
